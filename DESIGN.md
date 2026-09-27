@@ -6,6 +6,12 @@ Windows ⇄ iPhone file transfer app built with Tauri 2.0.
 
 Feasibility study completed (2026-09-27). Agreed architecture: **Model S** (browser-based, no iPhone app).
 
+## Next Steps (handoff)
+
+1. Scaffold the Tauri 2.0 app (Windows target) — follow the repo workflow: `worktree-start` → `worktree-code` → PR (never commit to `main` directly; squash merge).
+2. MVP scope (agreed): in-process axum server + QR/URL display + multipart upload receive (streamed to disk) + served-folder list/download + transfer progress events (WebSocket or SSE).
+3. Optional after MVP: PIN auth, Web Share API download path for photos/videos.
+
 ## Goal
 
 Transfer files between a Windows PC and an iPhone over Wi-Fi/LAN, driven by a Tauri 2.0 desktop app running on the Windows side.
