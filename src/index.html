@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>lan-drop</title>
+</head>
+<body>
+  <main>
+    <h1>lan<span>·</span>drop</h1>
+    <p id="status" class="status">starting server…</p>
+
+    <div class="card qr-card">
+      <div id="qr"></div>
+      <div class="url-row">
+        <code id="url"></code>
+        <button id="copy" title="Copy URL">Copy</button>
+      </div>
+      <p class="hint">Scan with the iPhone camera, then follow the on-screen instructions. Keep the PC and the iPhone on the same Wi-Fi.</p>
+      <p class="hint">First visit: Safari shows a certificate warning — tap "Show Details" → "visit this website", then follow the one-time setup on the page to trust lan-drop's CA. After that the warning is gone.</p>
+    </div>
+
+    <div class="card">
+      <h2>Storage</h2>
+      <p class="kv"><span>Uploads arrive in</span><code id="upload-dir"></code></p>
+      <p class="kv"><span>Folder served to the phone</span><code id="serve-root"></code></p>
+    </div>
+
+    <div class="card">
+      <h2>iPhone via USB cable</h2>
+      <div class="usb-row">
+        <select id="usb-devices"></select>
+        <button id="usb-refresh">Refresh</button>
+        <button id="usb-pair">Pair</button>
+      </div>
+      <p id="usb-status" class="hint"></p>
+      <div id="usb-browser" hidden>
+        <div class="crumbs" id="usb-crumbs"></div>
+        <ul class="entries" id="usb-entries"></ul>
+        <div class="usb-row">
+          <button id="usb-push">Send a file to the phone…</button>
+        </div>
+        <p class="hint">Tap a file to pull it into the PC's Downloads\lan-drop. Photos and videos are under DCIM. Sent files land in the phone's media partition (visible from any computer, not inside iPhone apps).</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Transfers</h2>
+      <p id="empty" class="hint">No transfers yet.</p>
+      <div id="transfers"></div>
+    </div>
+  </main>
+  <script src="main.js"></script>
+</body>
+</html>
