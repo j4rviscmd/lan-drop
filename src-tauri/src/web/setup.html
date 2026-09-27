@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>lan-drop — first-time setup</title>
+<style>
+  body { margin: 0; font-family: -apple-system, sans-serif; background: #0f1115; color: #e6e8ec; padding: 20px 16px 40px; }
+  h1 { font-size: 20px; } h1 span { color: #7aa2f7; }
+  h2 { font-size: 15px; color: #7aa2f7; margin-top: 24px; }
+  .card { background: #171a21; border: 1px solid #232733; border-radius: 14px; padding: 16px; }
+  ol { margin: 8px 0 0; padding-left: 18px; }
+  li { margin: 8px 0; line-height: 1.55; font-size: 15px; }
+  a.btn { display: block; text-align: center; margin: 14px 0 4px; padding: 13px; background: #1f2740; color: #7aa2f7; border: 1px solid #33406b; border-radius: 10px; text-decoration: none; font-size: 16px; }
+  .note { color: #9aa3b2; font-size: 13px; margin-top: 14px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<h1>lan<span>·</span>drop <span style="font-size:14px;color:#9aa3b2">first-time setup</span></h1>
+<div class="card">
+  <p style="font-size:15px">Install lan-drop's certificate authority once, then the app opens warning-free from the QR code.</p>
+  <a class="btn" href="/ca.crt" download>1. Download CA certificate</a>
+  <ol>
+    <li>Tap <b>Allow</b> if Safari asks to download</li>
+    <li><b>Settings → General → VPN &amp; Device Management</b> (or "Profile Downloaded") → install the "lan-drop local CA" profile</li>
+    <li><b>Settings → General → About → Certificate Trust Settings</b> → enable full trust for <b>lan-drop local CA</b></li>
+    <li>Scan the QR code on the PC — the page opens with no warning</li>
+  </ol>
+  <p class="note">This plain-HTTP setup page exists only because the certificate cannot be fetched over HTTPS before it is trusted. It serves nothing else.</p>
+</div>
+</body>
+</html>
