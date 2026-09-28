@@ -84,12 +84,10 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
     () => usb.apps?.filter((a) => a.name.toLowerCase().includes(q)) ?? null,
     [usb.apps, q],
   );
-  const fileEntries = useMemo(
-    () => filteredEntries?.filter((e) => !e.is_dir) ?? [],
-    [filteredEntries],
-  );
-  const selectedCount = fileEntries.filter((e) => usb.selected.has(e.name)).length;
-  const allSelected = fileEntries.length > 0 && selectedCount === fileEntries.length;
+  // Selection covers files and folders alike (folders pull recursively).
+  const selectable = filteredEntries ?? [];
+  const selectedCount = selectable.filter((e) => usb.selected.has(e.name)).length;
+  const allSelected = selectable.length > 0 && selectedCount === selectable.length;
 
   const entriesEmpty = filteredEntries?.length === 0;
   const appsEmpty = filteredApps?.length === 0;
@@ -155,6 +153,8 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
           selected={usb.selected}
           onOpen={usb.openEntry}
           onToggle={usb.toggleSelect}
+          onPull={usb.pull}
+          onDelete={usb.deleteEntry}
         />
       );
     }
@@ -236,7 +236,7 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
             </div>
 
             <div className="mt-2 flex items-center gap-2">
-              {!usb.loading && usb.scope !== null && fileEntries.length > 0 ? (
+              {!usb.loading && usb.scope !== null && selectable.length > 0 ? (
                 <>
                   <input
                     type="checkbox"
@@ -246,14 +246,14 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
                     }}
                     onChange={(e) =>
                       usb.setSelected(
-                        e.target.checked ? new Set(fileEntries.map((f) => f.name)) : new Set(),
+                        e.target.checked ? new Set(selectable.map((f) => f.name)) : new Set(),
                       )
                     }
-                    aria-label="Select all files"
+                    aria-label="Select all"
                     className="size-3.5 shrink-0 cursor-pointer accent-primary"
                   />
                   <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                    {selectedCount}/{fileEntries.length} selected
+                    {selectedCount}/{selectable.length} selected
                   </span>
                 </>
               ) : null}
@@ -308,9 +308,10 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
 
             <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
               Initial view lists your installed apps — tap one to browse its files (the app must
-              allow file access). "Media partition" holds DCIM photos and recordings. Tick files,
-              then press "Pull to PC" to download them into the upload folder shown
-              under Storage. Files sent while inside an app land in its Documents.
+              allow file access). "Media partition" holds DCIM photos and recordings. Tick files
+              or folders, then press "Pull to PC" to download them into the upload folder shown
+              under Storage; right-click an entry to save, copy its name, or delete it on the
+              device. Files sent while inside an app land in its Documents.
             </p>
           </div>
         ) : null}

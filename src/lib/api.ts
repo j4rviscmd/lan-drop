@@ -30,6 +30,9 @@ export const api = {
     invoke<string>("usb_pull", { udid, path, app, destDir }),
   usbPush: (udid: string, src: string, afcDir: string, app: string | null) =>
     invoke<void>("usb_push", { udid, src, afcDir, app }),
+  /** Deletes a file, or a directory with everything inside it. */
+  usbDelete: (udid: string, path: string, app: string | null) =>
+    invoke<void>("usb_delete", { udid, path, app }),
 
   /** Native file picker; returns the absolute path or null when cancelled. */
   pickFile: async (): Promise<string | null> => {
