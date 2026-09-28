@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { ChevronRight } from "lucide-react";
 
 import { fileKind, fmtSize } from "@lib/format";
@@ -17,8 +18,10 @@ interface EntryRowProps {
   onToggle: (entry: UsbEntry) => void;
 }
 
-/** List row for one device entry. Folders open; files tick for a bulk pull. */
-export function EntryRow({
+/** List row for one device entry. Folders open; files tick for a bulk pull.
+ * memo: a selection toggle re-renders only the clicked row, not the whole
+ * directory listing (entry/onOpen/onToggle stay referentially stable). */
+export const EntryRow = memo(function EntryRow({
   entry,
   udid,
   path,
@@ -82,4 +85,4 @@ export function EntryRow({
       </span>
     </button>
   );
-}
+});

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { ChevronRight } from "lucide-react";
 
 import { fileKind, fmtSize } from "@lib/format";
@@ -17,8 +18,10 @@ interface EntryTileProps {
   onToggle: (entry: UsbEntry) => void;
 }
 
-/** Grid tile for one device entry. Folders open; files tick for a bulk pull. */
-export function EntryTile({
+/** Grid tile for one device entry. Folders open; files tick for a bulk pull.
+ * memo: a selection toggle re-renders only the clicked tile, not the whole
+ * directory listing (entry/onOpen/onToggle stay referentially stable). */
+export const EntryTile = memo(function EntryTile({
   entry,
   udid,
   path,
@@ -84,4 +87,4 @@ export function EntryTile({
       </span>
     </button>
   );
-}
+});
