@@ -10,13 +10,14 @@ export function TransfersCard() {
   const { transfers } = useTransfers();
 
   return (
-    <Card className="min-[860px]:mt-auto">
+    // Why: at >=860px, Transfers and Selected split the left rail below Storage 1:1; the list scrolls internally.
+    <Card className="min-[860px]:min-h-0 min-[860px]:flex-1">
       <CardHeader>
         <CardTitle className="text-[13px] tracking-[0.06em] text-muted-foreground uppercase">
           Transfers
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-col min-[860px]:min-h-0 min-[860px]:flex-1">
         {transfers.length === 0 ? (
           <Empty className="gap-2 rounded-none border-0 p-0">
             <EmptyHeader>
@@ -27,7 +28,7 @@ export function TransfersCard() {
             </EmptyHeader>
           </Empty>
         ) : (
-          <div className="flex flex-col gap-2.5 min-[860px]:max-h-[200px] min-[860px]:overflow-y-auto">
+          <div className="flex flex-col gap-2.5 min-[860px]:flex-1 min-[860px]:overflow-y-auto">
             {transfers.map((t) => {
               // Why: total=0 (size unknown yet) shows "…" until the first
               // progress event; the 100 clamp guards rounding (vanilla-JS parity).
