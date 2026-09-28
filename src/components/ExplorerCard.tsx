@@ -2,8 +2,7 @@ import { ArrowDownToLine, Search, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
-import { useUsbBrowser } from "@hooks/useUsbBrowser";
-import { useTransfers } from "@hooks/useTransfers";
+import type { UsbBrowser } from "@hooks/useUsbBrowser";
 import { cn } from "@lib/utils";
 import { Badge } from "@ui/badge";
 import { Button } from "@ui/button";
@@ -24,9 +23,7 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
   return <p className="py-6 text-center text-[13px] text-muted-foreground">{children}</p>;
 }
 
-export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
-  const { track } = useTransfers();
-  const usb = useUsbBrowser(uploadDir, track);
+export function ExplorerCard({ usb }: { usb: UsbBrowser }) {
   const [query, setQuery] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -86,7 +83,7 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
   );
   // Selection covers files and folders alike (folders pull recursively).
   const selectable = filteredEntries ?? [];
-  const selectedCount = selectable.filter((e) => usb.selected.has(e.name)).length;
+  const selectedCount = selectable.filter((e) => usb.selectedHere.has(e.name)).length;
   const allSelected = selectable.length > 0 && selectedCount === selectable.length;
 
   const entriesEmpty = filteredEntries?.length === 0;
@@ -150,7 +147,7 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
           udid={usb.udid ?? ""}
           pathFor={usb.pathFor}
           app={usb.scope?.type === "app" ? usb.scope.id : null}
-          selected={usb.selected}
+          selected={usb.selectedHere}
           onOpen={usb.openEntry}
           onToggle={usb.toggleSelect}
           onPull={usb.pull}
@@ -249,16 +246,12 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
                         ref={(el) => {
                           if (el) el.indeterminate = selectedCount > 0 && !allSelected;
                         }}
-                        onChange={(e) =>
-                          usb.setSelected(
-                            e.target.checked ? new Set(selectable.map((f) => f.name)) : new Set(),
-                          )
-                        }
+                        onChange={(e) => usb.toggleAll(selectable, e.target.checked)}
                         aria-label="Select all"
                         className="size-3.5 shrink-0 cursor-pointer accent-primary"
                       />
                       <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                        {selectedCount}/{selectable.length} selected
+                        {selectedCount}/{selectable.length} selected here
                       </span>
                     </>
                   ) : null}
@@ -270,16 +263,18 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
                   usb.scope !== null ? "grid grid-cols-2" : "flex",
                 )}
               >
+                {/* Why: gate on the whole basket, not this folder's count —
+                    ticked items can live in other folders. */}
                 {usb.scope !== null ? (
                   <Button
                     variant="outline"
                     size="sm"
                     className="w-full"
-                    disabled={selectedCount === 0}
+                    disabled={usb.selected.size === 0}
                     onClick={() => void usb.pullSelected()}
                   >
                     <ArrowDownToLine className="size-3.5 shrink-0" />
-                    Pull to PC
+                    {usb.selected.size > 0 ? `Pull ${usb.selected.size} to PC` : "Pull to PC"}
                   </Button>
                 ) : null}
                 <Button
@@ -316,9 +311,10 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
             <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
               Initial view lists your installed apps — tap one to browse its files (the app must
               allow file access). "Media partition" holds DCIM photos and recordings. Tick files
-              or folders, then press "Pull to PC" to download them into the upload folder shown
-              under Storage; right-click an entry to save, copy its name, or delete it on the
-              device. Files sent while inside an app land in its Documents.
+              or folders — they gather in the "Selected" list at the left, across folders — then
+              press "Pull to PC" to download them into the upload folder shown under Storage.
+              Right-click an entry to save, copy its name, or delete it on the device. Files sent
+              while inside an app land in its Documents.
             </p>
           </div>
         ) : null}

@@ -1,9 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 
 import { api } from "@lib/api";
-import type { Scope, StartPath, TransferDirection, UsbApp, UsbDeviceEntry, UsbEntry } from "@lib/types";
+import type {
+  Scope,
+  SelectedEntry,
+  StartPath,
+  TransferDirection,
+  UsbApp,
+  UsbDeviceEntry,
+  UsbEntry,
+} from "@lib/types";
 
 export type UsbView = "grid" | "list";
 
@@ -54,6 +62,71 @@ function rel(s: Scope, cw: string[]): string {
   return "/" + cw.join("/");
 }
 
+/** Stable identity of a place on the device: "media" or "app:<bundle id>". */
+function scopeKeyOf(s: Scope): string {
+  return s?.type === "app" ? `app:${s.id}` : "media";
+}
+
+/** Basket key — unique per (scope, folder, name); the JSON form can't be
+ *  forged by a file name containing separators. */
+export function selKey(s: Scope, cw: string[], name: string): string {
+  return JSON.stringify([scopeKeyOf(s), cw, name]);
+}
+
+/** True when both (scope, cwd) pairs name the same device folder. */
+function samePlace(s1: Scope, cw1: string[], s2: Scope, cw2: string[]): boolean {
+  if (scopeKeyOf(s1) !== scopeKeyOf(s2)) return false;
+  return cw1.length === cw2.length && cw1.every((c, i) => c === cw2[i]);
+}
+
+/** Absolute device path of an entry. */
+export function pathOf(s: Scope, cw: string[], name: string): string {
+  const r = rel(s, cw);
+  return (r === "/" ? "" : r) + "/" + name;
+}
+
+/** The USB browser API consumed by Shell, ExplorerCard and SelectionCard. */
+export interface UsbBrowser {
+  devices: UsbDeviceEntry[];
+  udid: string | null;
+  paired: boolean;
+  scope: Scope;
+  cwd: string[];
+  navigate: (s: Scope, cw: string[]) => void;
+  pathFor: (name: string) => string;
+  noAccess: ReadonlySet<string>;
+  view: UsbView;
+  status: string;
+  loading: boolean;
+  apps: UsbApp[] | null;
+  entries: UsbEntry[] | null;
+  /** Cross-folder ticked basket — key = selKey(scope, cwd, name). */
+  selected: ReadonlyMap<string, SelectedEntry>;
+  /** Ticked names in the current folder (row checkboxes, "x/y here"). */
+  selectedHere: ReadonlySet<string>;
+  toggleSelect: (en: UsbEntry) => void;
+  toggleAll: (list: UsbEntry[], on: boolean) => void;
+  removeSelected: (key: string) => void;
+  clearSelection: () => void;
+  deleteSelected: () => Promise<void>;
+  pullSelected: () => Promise<void>;
+  pull: (en: UsbEntry) => Promise<boolean>;
+  deleteEntry: (en: UsbEntry) => Promise<void>;
+  refresh: () => Promise<void>;
+  pair: () => Promise<void>;
+  selectDevice: (ud: string) => void;
+  openRoot: () => void;
+  openApp: (app: UsbApp) => void;
+  openMedia: () => void;
+  openEntry: (en: UsbEntry) => void;
+  pushPath: (src: string) => Promise<void>;
+  pickAndPush: () => Promise<void>;
+  setView: (v: UsbView) => void;
+  startPath: StartPath | null;
+  saveStartPath: () => void;
+  clearStartPath: () => void;
+}
+
 /**
  * The USB browser state machine — a port of the vanilla-JS flow in the old
  * src/main.js. Status strings, error regexes and the /Documents app-scope
@@ -65,7 +138,7 @@ function rel(s: Scope, cw: string[]): string {
 export function useUsbBrowser(
   uploadDir: string,
   track: (file: string, direction: TransferDirection) => void,
-) {
+): UsbBrowser {
   const [devices, setDevices] = useState<UsbDeviceEntry[]>([]);
   const [udid, setUdid] = useState<string | null>(null);
   const [paired, setPaired] = useState(false);
@@ -80,8 +153,9 @@ export function useUsbBrowser(
   /** apps = the initial scope tile grid; entries = a browsed directory. */
   const [apps, setApps] = useState<UsbApp[] | null>(null);
   const [entries, setEntries] = useState<UsbEntry[] | null>(null);
-  /** Ticked file names in the current directory — folders can't be pulled. */
-  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+  /** Ticked entries across folders — a basket that survives navigation so
+   *  one bulk pull/delete can span paths. Key = selKey(scope, cwd, name). */
+  const [selected, setSelected] = useState<ReadonlyMap<string, SelectedEntry>>(() => new Map());
 
   // Generation guard: fast navigation can outpace usb_list/usb_apps
   // responses; stale responses must not clobber the newer view.
@@ -96,8 +170,7 @@ export function useUsbBrowser(
       const g = ++gen.current;
       locRef.current = { s, cw };
       setLoading(true);
-      // Any navigation invalidates the ticked set.
-      setSelected(new Set());
+      // Navigation resets the listing; the ticked basket survives it.
       setApps(null);
       setEntries(null);
       try {
@@ -176,6 +249,8 @@ export function useUsbBrowser(
    *  the shared tail of refresh() and the pushed-set handler. */
   const adoptDevices = useCallback(async (devs: UsbDeviceEntry[]) => {
     setDevices(devs);
+    // A new or vanished device invalidates every ticked path.
+    setSelected(new Map());
     if (devs.length === 0) {
       // No "then Refresh" nudge: the backend watch picks devices up on its own.
       setStatus("No iPhone found. Plug it in via USB (iTunes or the Apple Devices app must be installed).");
@@ -230,6 +305,7 @@ export function useUsbBrowser(
   const selectDevice = useCallback(
     (ud: string) => {
       setUdid(ud);
+      setSelected(new Map()); // Paths are device-bound.
       void go(ud, null);
     },
     [go],
@@ -266,24 +342,19 @@ export function useUsbBrowser(
     [udid, go],
   );
 
-  const fullPath = useCallback(
-    (name: string) => {
-      const r = rel(scope, cwd);
-      return (r === "/" ? "" : r) + "/" + name;
-    },
-    [scope, cwd],
-  );
+  const fullPath = useCallback((name: string) => pathOf(scope, cwd, name), [scope, cwd]);
 
-  const pull = useCallback(
-    async (en: UsbEntry): Promise<boolean> => {
+  /** Pull one basket item to the PC — single save and bulk pull share this. */
+  const pullItem = useCallback(
+    async (it: SelectedEntry): Promise<boolean> => {
       if (!udid) return false;
-      setStatus(`Pulling ${en.name}…`);
-      track(en.name, "in");
+      setStatus(`Pulling ${it.name}…`);
+      track(it.name, "in");
       try {
         const dest = await api.usbPull(
           udid,
-          fullPath(en.name),
-          scope?.type === "app" ? scope.id : null,
+          pathOf(it.scope, it.cwd, it.name),
+          it.scope.type === "app" ? it.scope.id : null,
           uploadDir,
         );
         setStatus(`Saved to ${dest}`);
@@ -295,7 +366,15 @@ export function useUsbBrowser(
         return false;
       }
     },
-    [udid, scope, uploadDir, fullPath, track],
+    [udid, uploadDir, track],
+  );
+
+  const pull = useCallback(
+    async (en: UsbEntry): Promise<boolean> => {
+      if (!scope) return false;
+      return pullItem({ scope, cwd, name: en.name, is_dir: en.is_dir, size: en.size });
+    },
+    [scope, cwd, pullItem],
   );
 
   const openEntry = useCallback(
@@ -305,29 +384,67 @@ export function useUsbBrowser(
     [scope, cwd, navigate],
   );
 
-  /** Tick/untick one file or folder for a bulk pull (checkbox UI). */
-  const toggleSelect = useCallback((en: UsbEntry) => {
+  /** Tick/untick one file or folder — remembers its folder so the basket
+   *  survives navigation (checkbox UI). */
+  const toggleSelect = useCallback(
+    (en: UsbEntry) => {
+      if (!scope) return;
+      const k = selKey(scope, cwd, en.name);
+      setSelected((prev) => {
+        const next = new Map(prev);
+        if (next.has(k)) next.delete(k);
+        else next.set(k, { scope, cwd, name: en.name, is_dir: en.is_dir, size: en.size });
+        return next;
+      });
+    },
+    [scope, cwd],
+  );
+
+  /** Select-all checkbox for the visible listing: ticks every given entry,
+   *  or unticks just this folder's ticks (other folders keep theirs). */
+  const toggleAll = useCallback(
+    (list: UsbEntry[], on: boolean) => {
+      if (!scope) return;
+      setSelected((prev) => {
+        const next = new Map(prev);
+        for (const en of list) {
+          const k = selKey(scope, cwd, en.name);
+          if (on) next.set(k, { scope, cwd, name: en.name, is_dir: en.is_dir, size: en.size });
+          else next.delete(k);
+        }
+        return next;
+      });
+    },
+    [scope, cwd],
+  );
+
+  /** Untick one basket item (the × row button in the Selected card). */
+  const removeSelected = useCallback((k: string) => {
     setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(en.name)) next.delete(en.name);
-      else next.add(en.name);
+      const next = new Map(prev);
+      next.delete(k);
       return next;
     });
   }, []);
 
+  const clearSelection = useCallback(() => setSelected(new Map()), []);
+
   /** Pull every ticked entry sequentially — one AFC session at a time
-   * (a ticked folder recurses inside usb_pull, not here). */
+   *  (a ticked folder recurses inside usb_pull, not here). Successfully
+   *  pulled items untick; failures stay ticked for a retry. */
   const pullSelected = useCallback(async () => {
-    if (!udid || !entries) return;
-    const list = entries.filter((e) => selected.has(e.name));
-    if (list.length === 0) return;
+    if (!udid) return;
+    const items = [...selected.values()];
+    if (items.length === 0) return;
     let ok = 0;
-    for (const en of list) {
-      if (await pull(en)) ok++;
+    for (const it of items) {
+      if (await pullItem(it)) {
+        ok++;
+        removeSelected(selKey(it.scope, it.cwd, it.name));
+      }
     }
-    setSelected(new Set());
-    setStatus(`Pulled ${ok}/${list.length} to ${uploadDir}.`);
-  }, [udid, entries, selected, pull, uploadDir]);
+    setStatus(`Pulled ${ok}/${items.length} to ${uploadDir}.`);
+  }, [udid, selected, pullItem, removeSelected, uploadDir]);
 
   /** Native-confirm, delete on the device, then reload the listing. */
   const deleteEntry = useCallback(
@@ -340,16 +457,51 @@ export function useUsbBrowser(
       try {
         await api.usbDelete(udid, fullPath(en.name), scope?.type === "app" ? scope.id : null);
         toast.success(`Deleted ${en.name}.`);
-        // Reload the current folder so the listing drops the deleted entry
-        // (navigate() re-browses the same scope/cwd and clears the ticks).
+        // Drop the tick too — navigation no longer clears the basket.
+        if (scope) removeSelected(selKey(scope, cwd, en.name));
+        // Reload the current folder so the listing drops the deleted entry.
         navigate(scope, cwd);
       } catch (e) {
         setStatus(`Delete failed: ${e}`);
         toast.error(`Delete failed: ${e}`);
       }
     },
-    [udid, scope, cwd, fullPath, navigate],
+    [udid, scope, cwd, fullPath, navigate, removeSelected],
   );
+
+  /** One native confirm for the whole basket, then delete each item on the
+   *  device. Failures stay ticked; the current folder reloads on success. */
+  const deleteSelected = useCallback(async () => {
+    if (!udid) return;
+    const items = [...selected.values()];
+    if (items.length === 0) return;
+    const n = items.length;
+    const folders = items.some((i) => i.is_dir);
+    const msg =
+      `Delete ${n} selected item${n > 1 ? "s" : ""}` +
+      (folders ? " — folders delete everything inside them" : "") +
+      " from the device?";
+    if (!(await confirm(msg, { title: "Delete from device", kind: "warning" }))) return;
+    let ok = 0;
+    for (const it of items) {
+      try {
+        await api.usbDelete(
+          udid,
+          pathOf(it.scope, it.cwd, it.name),
+          it.scope.type === "app" ? it.scope.id : null,
+        );
+        ok++;
+        removeSelected(selKey(it.scope, it.cwd, it.name));
+      } catch (e) {
+        setStatus(`Delete failed for ${it.name}: ${e}`);
+        toast.error(`Delete failed for ${it.name}`);
+      }
+    }
+    if (ok > 0) {
+      toast.success(`Deleted ${ok}/${n}.`);
+      if (scope) navigate(scope, cwd);
+    }
+  }, [udid, selected, scope, cwd, navigate, removeSelected]);
 
   const pushPath = useCallback(
     async (src: string) => {
@@ -410,6 +562,18 @@ export function useUsbBrowser(
     setStartPath(null);
   }, []);
 
+  // Ticked names in the current folder — drives the row checkboxes and the
+  // "x/y here" counter; the full cross-folder basket renders in the
+  // SelectionCard.
+  const selectedHere = useMemo(() => {
+    const here = new Set<string>();
+    if (!scope) return here;
+    for (const it of selected.values()) {
+      if (samePlace(it.scope, it.cwd, scope, cwd)) here.add(it.name);
+    }
+    return here;
+  }, [selected, scope, cwd]);
+
   useEffect(() => {
     void refresh();
     // Mount-only: the initial device scan.
@@ -440,8 +604,12 @@ export function useUsbBrowser(
     apps,
     entries,
     selected,
-    setSelected,
+    selectedHere,
     toggleSelect,
+    toggleAll,
+    removeSelected,
+    clearSelection,
+    deleteSelected,
     pullSelected,
     pull,
     deleteEntry,
