@@ -13,8 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@ui/skeleton";
 
 import { Breadcrumbs } from "./explorer/Breadcrumbs";
-import { EntryRow } from "./explorer/EntryRow";
-import { EntryTile } from "./explorer/EntryTile";
+import { VirtualEntryList } from "./explorer/VirtualEntryList";
 import { ScopeTile } from "./explorer/ScopeTile";
 import { SettingsDialog } from "./explorer/SettingsDialog";
 import { ViewToggle } from "./explorer/ViewToggle";
@@ -31,6 +30,19 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
   const [query, setQuery] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  // Content width of the list scroller — drives the virtualized grid's
+  // column count. Observed here (not in VirtualEntryList) so it is settled
+  // before the first entries arrive. Why usb.paired dep: the scroller only
+  // mounts once pairing succeeds — a [] dep would run before it exists and
+  // never observe it.
+  const [listWidth, setListWidth] = useState(0);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((es) => setListWidth(es[0]!.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [usb.paired]);
 
   // Drag & drop push: the webview hands us absolute paths, which go straight
   // into usb_push — no file dialog. The Send button stays as the
@@ -51,9 +63,12 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
   }, [pushPath]);
 
   // Why: every navigation updates scope or cwd in useUsbBrowser, so a query
-  // typed for one folder never leaks into the next view.
+  // typed for one folder never leaks into the next view — and the virtualized
+  // list restarts at the top like any file browser (stale scroll offsets
+  // would land mid-list on estimates).
   useEffect(() => {
     setQuery("");
+    listRef.current?.scrollTo({ top: 0 });
   }, [usb.scope, usb.cwd]);
 
   const device = usb.devices.find((d) => d.udid === usb.udid);
@@ -128,23 +143,19 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
     } else if (entriesEmpty) {
       listing = <EmptyNote>Nothing here</EmptyNote>;
     } else {
-      const Entry = usb.view === "grid" ? EntryTile : EntryRow;
       listing = (
-        <div className={usb.view === "grid" ? TILE_GRID : "pt-1"}>
-          {filteredEntries?.map((en) => (
-            <Entry
-              key={en.name}
-              entry={en}
-              udid={usb.udid ?? ""}
-              path={usb.pathFor(en.name)}
-              app={usb.scope?.type === "app" ? usb.scope.id : null}
-              rootRef={listRef}
-              selected={usb.selected.has(en.name)}
-              onOpen={usb.openEntry}
-              onToggle={usb.toggleSelect}
-            />
-          ))}
-        </div>
+        <VirtualEntryList
+          entries={filteredEntries ?? []}
+          view={usb.view}
+          scrollRef={listRef}
+          width={listWidth}
+          udid={usb.udid ?? ""}
+          pathFor={usb.pathFor}
+          app={usb.scope?.type === "app" ? usb.scope.id : null}
+          selected={usb.selected}
+          onOpen={usb.openEntry}
+          onToggle={usb.toggleSelect}
+        />
       );
     }
   }
