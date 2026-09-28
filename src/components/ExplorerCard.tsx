@@ -188,7 +188,7 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
             )}
           >
             {dragActive ? (
-              <div className="absolute inset-x-0 top-6 z-10 mx-auto w-fit rounded-md bg-background/90 px-3 py-1.5 text-[13px] font-medium shadow-sm">
+              <div className="absolute inset-x-0 top-1/2 z-10 mx-auto w-fit -translate-y-1/2 rounded-md bg-background/90 px-3 py-1.5 text-[13px] font-medium shadow-sm">
                 Drop files to send to the phone
               </div>
             ) : null}
@@ -196,15 +196,6 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
             <div className="flex items-start justify-between gap-2">
               <Breadcrumbs scope={usb.scope} cwd={usb.cwd} onNavigate={usb.navigate} />
               <ViewToggle view={usb.view} onChange={usb.setView} />
-            </div>
-
-            <div
-              ref={listRef}
-              // Why: below 860px the page scrolls, so the list caps at 340px;
-              // at ≥860px the page never scrolls and the list flexes to fill.
-              className="mt-2 max-h-[340px] min-h-0 flex-1 overflow-y-auto overscroll-contain min-[860px]:max-h-none"
-            >
-              {listing}
             </div>
 
             <div className="mt-2 flex items-center gap-2">
@@ -227,6 +218,15 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
                 <Upload className="size-3.5" />
                 Send a file to the phone…
               </Button>
+            </div>
+
+            <div
+              ref={listRef}
+              // Why: below 860px the page scrolls, so the list caps at 340px;
+              // at ≥860px the page never scrolls and the list flexes to fill.
+              className="mt-2 max-h-[340px] min-h-0 flex-1 overflow-y-auto overscroll-contain min-[860px]:max-h-none"
+            >
+              {listing}
             </div>
 
             <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
