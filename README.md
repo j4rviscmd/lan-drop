@@ -1,6 +1,19 @@
-# Tauri + Vanilla
+# lan-drop
 
-This template should help get you started developing with Tauri in vanilla HTML, CSS and Javascript.
+Windows ⇄ iPhone file transfer app built with Tauri 2.0. See [DESIGN.md](./DESIGN.md) for the architecture.
+
+## Frontend stack
+
+React 19 + TypeScript + Vite 6 + Tailwind CSS v4, with [ObsidianUI](https://www.obsidianui.dev/) components (shadcn-style copy-paste registry, MIT).
+
+## Development
+
+```bash
+npm install
+npm run tauri dev
+```
+
+`npm run build` type-checks and bundles the frontend into `dist/` (wired to Tauri via `src-tauri/tauri.conf.json`).
 
 ## Recommended IDE Setup
 
