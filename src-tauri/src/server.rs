@@ -34,8 +34,10 @@ pub struct AppState {
     events: broadcast::Sender<TransferEvent>,
     /// Canonicalized root visible to `GET /api/list` and `GET /api/download`.
     pub serve_root: PathBuf,
-    /// Canonicalized destination folder for uploads.
-    pub upload_dir: PathBuf,
+    /// Canonicalized destination folder for uploads; swapped in place at
+    /// runtime by `set_upload_dir`. RwLock, not a plain field: reads happen
+    /// per upload while the routers keep the AppState alive forever.
+    pub upload_dir: parking_lot::RwLock<PathBuf>,
     /// CA certificate PEM served at `GET /ca.crt` for first-time iPhone setup.
     pub ca_cert_pem: Option<String>,
 }
@@ -50,9 +52,20 @@ pub fn new_state(
     Ok(Arc::new(AppState {
         events,
         serve_root: serve_root.canonicalize()?,
-        upload_dir: upload_dir.canonicalize()?,
+        upload_dir: parking_lot::RwLock::new(upload_dir.canonicalize()?),
         ca_cert_pem,
     }))
+}
+
+impl AppState {
+    /// Current canonicalized upload destination.
+    pub fn upload_dir(&self) -> PathBuf {
+        self.upload_dir.read().clone()
+    }
+
+    pub fn set_upload_dir(&self, dir: PathBuf) {
+        *self.upload_dir.write() = dir;
+    }
 }
 
 /// Bind `addr` on `start`, falling back to the next ports if busy. The
@@ -291,10 +304,13 @@ async fn upload(
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("bad multipart body: {e}")))?
     {
         let name = sanitize_filename(field.file_name().unwrap_or("file"));
-        let dest = unique_path(&state.upload_dir, &name).await;
+        // Note: snapshot the folder once so dest and tmp stay in the same
+        // place even if set_upload_dir swaps it mid-request.
+        let upload_dir = state.upload_dir();
+        let dest = unique_path(&upload_dir, &name).await;
         // Stream into a temp file and rename on completion, so an aborted
         // upload never leaves a truncated file under its final name.
-        let tmp = state.upload_dir.join(format!(
+        let tmp = upload_dir.join(format!(
             ".{}.{}.part",
             std::process::id(),
             std::time::SystemTime::now()

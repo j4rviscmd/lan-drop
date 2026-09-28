@@ -2213,6 +2213,7 @@ dependencies = [
  "axum-server",
  "idevice",
  "local-ip-address",
+ "parking_lot",
  "qrcode",
  "rcgen",
  "rustls",

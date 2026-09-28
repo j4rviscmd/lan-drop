@@ -1,4 +1,5 @@
 pub mod server;
+pub mod settings;
 pub mod tls;
 pub mod usb;
 
@@ -19,8 +20,37 @@ struct ServerInfo {
 }
 
 #[tauri::command]
-fn server_info(info: tauri::State<ServerInfo>) -> ServerInfo {
-    info.inner().clone()
+fn server_info(
+    info: tauri::State<ServerInfo>,
+    state: tauri::State<'_, std::sync::Arc<server::AppState>>,
+) -> ServerInfo {
+    let mut info = info.inner().clone();
+    // Live value: set_upload_dir swaps the folder at runtime.
+    info.upload_dir = server::display(&state.upload_dir());
+    info
+}
+
+/// Switch the upload destination at runtime. Validate (create + canonicalize)
+/// and persist first, then point the live server state at it — a failed save
+/// leaves everything unchanged.
+#[tauri::command]
+fn set_upload_dir(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, std::sync::Arc<server::AppState>>,
+    path: String,
+) -> Result<String, String> {
+    let path = std::path::PathBuf::from(path);
+    std::fs::create_dir_all(&path).map_err(|e| format!("can't create folder: {e}"))?;
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("can't open folder: {e}"))?;
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    // Note: persist the path as chosen (not canonicalized) so config.json
+    // stays human-readable; only the live state takes the canonical form.
+    settings::save(&data_dir, &settings::Settings { upload_dir: path })
+        .map_err(|e| format!("can't save settings: {e}"))?;
+    state.set_upload_dir(canonical.clone());
+    Ok(server::display(&canonical))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -57,12 +87,13 @@ pub fn run() {
             let home = app.path().home_dir()?;
             // TODO MVP+: configurable served folder (tauri-plugin-dialog)
             let serve_root = home.join("Downloads");
-            let upload_dir = serve_root.join("lan-drop");
+            let default_upload_dir = serve_root.join("lan-drop");
 
             // Local CA: generated once, installed on the iPhone once, then
             // every leaf we serve is trusted without browser warnings.
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+            let settings = settings::load(&data_dir, default_upload_dir.clone());
             let ca = tls::Ca::load_or_create(&data_dir)?;
 
             // TODO: multi-adapter (VPN) machines may pick the wrong IP; pick from a list later
@@ -70,15 +101,27 @@ pub fn run() {
 
             let (events, _keep) = tokio::sync::broadcast::channel(64);
             let usb_events = events.clone();
+            // Configured folder unusable (unplugged drive, permissions…):
+            // fall back to the default rather than refuse to start. The
+            // saved choice stays, so it's honored again once usable.
+            let upload_dir = settings.upload_dir.canonicalize().unwrap_or_else(|e| {
+                eprintln!(
+                    "lan-drop: configured upload dir {} unusable ({e}), using default",
+                    server::display(&settings.upload_dir)
+                );
+                default_upload_dir
+            });
             let state = server::new_state(
                 events,
                 serve_root.clone(),
-                upload_dir.clone(),
+                upload_dir,
                 Some(ca.cert_pem.clone()),
             )?;
+            // set_upload_dir / server_info reach the live state from commands.
+            app.manage(state.clone());
             app.manage(usb_events);
             let serve_root_disp = server::display(&state.serve_root);
-            let upload_dir_disp = server::display(&state.upload_dir);
+            let upload_dir_disp = server::display(&state.upload_dir());
             let setup_state = state.clone();
             let router = server::router(state);
             let loopback_router = router.clone();
@@ -180,6 +223,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             server_info,
+            set_upload_dir,
             usb::usb_devices,
             usb::usb_pair,
             usb::usb_device_info,

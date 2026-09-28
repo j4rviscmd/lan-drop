@@ -4,13 +4,15 @@ import { Shell } from "@components/Shell";
 import { Toaster } from "@ui/sonner";
 
 export default function App() {
-  const info = useServerInfo();
+  const { info, refresh } = useServerInfo();
 
   return (
     <>
       {info ? (
         <TransfersProvider loopbackPort={info.loopback_port}>
-          <Shell info={info} />
+          {/* Why: refresh server_info so both the Storage card and USB Pull
+              (which reuse info.upload_dir as destDir) follow the new folder. */}
+          <Shell info={info} onUploadDirChanged={refresh} />
         </TransfersProvider>
       ) : (
         <main className="mx-auto max-w-[640px] p-5">

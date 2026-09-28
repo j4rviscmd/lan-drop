@@ -8,6 +8,8 @@ import type { ServerInfo, UsbApp, UsbDeviceEntry, UsbDeviceInfo, UsbEntry } from
 // dest_dir, afcDir → afc_dir). `app` must be null — not undefined — for
 // Rust's Option<String> to deserialize as None.
 export const api = {
+  /** Switch the upload destination; returns the display path. */
+  setUploadDir: (path: string) => invoke<string>("set_upload_dir", { path }),
   serverInfo: () => invoke<ServerInfo>("server_info"),
 
   usbDevices: () => invoke<UsbDeviceEntry[]>("usb_devices"),
@@ -33,5 +35,11 @@ export const api = {
   pickFile: async (): Promise<string | null> => {
     const file = await openFileDialog({ multiple: false });
     return typeof file === "string" ? file : null;
+  },
+
+  /** Native folder picker; returns the absolute path or null when cancelled. */
+  pickFolder: async (): Promise<string | null> => {
+    const dir = await openFileDialog({ directory: true });
+    return typeof dir === "string" ? dir : null;
   },
 };
