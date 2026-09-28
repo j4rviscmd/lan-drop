@@ -39,6 +39,12 @@ export type Scope =
   | { type: "media" }
   | { type: "app"; id: string; name: string };
 
+/** Saved USB-explorer launch location; null = "unset" (launch on the app grid). */
+export interface StartPath {
+  scope: Exclude<Scope, null>;
+  cwd: string[];
+}
+
 /** in = arriving on the PC (upload / pull); out = leaving the PC (push). */
 export type TransferDirection = "in" | "out";
 

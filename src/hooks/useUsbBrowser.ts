@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { api } from "@lib/api";
-import type { Scope, TransferDirection, UsbApp, UsbDeviceEntry, UsbEntry } from "@lib/types";
+import type { Scope, StartPath, TransferDirection, UsbApp, UsbDeviceEntry, UsbEntry } from "@lib/types";
 
 export type UsbView = "grid" | "list";
 
@@ -10,6 +10,38 @@ export type UsbView = "grid" | "list";
 /// stored value (or none) falls back to it.
 function initialView(): UsbView {
   return localStorage.getItem("usb-view") === "list" ? "list" : "grid";
+}
+
+const START_PATH_KEY = "usb-start-path";
+
+// Why: localStorage is untrusted — a malformed or outdated entry must read
+// as "unset" instead of breaking the launch navigation.
+function parseScope(raw: unknown): Exclude<Scope, null> | null {
+  if (typeof raw !== "object" || raw === null || !("type" in raw)) return null;
+  if (raw.type === "media") return { type: "media" };
+  if (
+    raw.type === "app" &&
+    "id" in raw &&
+    typeof raw.id === "string" &&
+    "name" in raw &&
+    typeof raw.name === "string"
+  ) {
+    return { type: "app", id: raw.id, name: raw.name };
+  }
+  return null;
+}
+
+function readStartPath(): StartPath | null {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(START_PATH_KEY) ?? "null");
+    if (typeof raw !== "object" || raw === null || !("scope" in raw)) return null;
+    const scope = parseScope(raw.scope);
+    if (!scope) return null;
+    const cw = "cwd" in raw && Array.isArray(raw.cwd) ? raw.cwd : [];
+    return { scope, cwd: cw.filter((c): c is string => typeof c === "string") };
+  } catch {
+    return null;
+  }
 }
 
 // VendDocuments roots the AFC session at the app container but only exposes
@@ -41,6 +73,7 @@ export function useUsbBrowser(
   // Apps that rejected house_arrest this session (iOS hides non-file-sharing apps).
   const [noAccess, setNoAccess] = useState<ReadonlySet<string>>(() => new Set());
   const [view, setViewState] = useState<UsbView>(initialView);
+  const [startPath, setStartPath] = useState<StartPath | null>(readStartPath);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   /** apps = the initial scope tile grid; entries = a browsed directory. */
@@ -54,7 +87,7 @@ export function useUsbBrowser(
   const gen = useRef(0);
 
   const browse = useCallback(
-    async (ud: string, s: Scope, cw: string[]) => {
+    async (ud: string, s: Scope, cw: string[], fallback = false) => {
       const g = ++gen.current;
       setLoading(true);
       // Any navigation invalidates the ticked set.
@@ -88,6 +121,16 @@ export function useUsbBrowser(
           await browse(ud, null, []);
           return;
         }
+        // Saved startup folder is stale (folder/app gone): land on its
+        // scope root, or the app grid when the scope root itself failed.
+        if (fallback && s) {
+          setStatus("Saved startup folder is unavailable.");
+          const next = cw.length > 0 ? s : null;
+          setScope(next);
+          setCwd([]);
+          await browse(ud, next, []);
+          return;
+        }
         setStatus(`Cannot browse: ${e}`);
       } finally {
         if (g === gen.current) setLoading(false);
@@ -98,10 +141,10 @@ export function useUsbBrowser(
 
   /** Every navigation funnels through here: set scope + cwd, then browse. */
   const go = useCallback(
-    async (ud: string, s: Scope, cw: string[] = []) => {
+    async (ud: string, s: Scope, cw: string[] = [], fallback = false) => {
       setScope(s);
       setCwd(cw);
-      await browse(ud, s, cw);
+      await browse(ud, s, cw, fallback);
     },
     [browse],
   );
@@ -113,13 +156,14 @@ export function useUsbBrowser(
         const info = await api.usbDeviceInfo(ud);
         setStatus(`Paired · ${info.name} · iOS ${info.version}`);
         setPaired(true);
-        await go(ud, null);
+        // Startup default: open the saved folder instead of the app grid.
+        await (startPath ? go(ud, startPath.scope, startPath.cwd, true) : go(ud, null));
       } catch {
         setStatus('Not paired yet — press Pair, unlock the iPhone, then tap "Trust" on it.');
         setPaired(false);
       }
     },
-    [go],
+    [go, startPath],
   );
 
   const refresh = useCallback(async () => {
@@ -296,6 +340,20 @@ export function useUsbBrowser(
     localStorage.setItem("usb-view", v);
   }, []);
 
+  /** Register the currently browsed location as the launch default. */
+  const saveStartPath = useCallback(() => {
+    if (!scope) return;
+    const sp: StartPath = { scope, cwd };
+    localStorage.setItem(START_PATH_KEY, JSON.stringify(sp));
+    setStartPath(sp);
+    toast.success("Startup folder saved.");
+  }, [scope, cwd]);
+
+  const clearStartPath = useCallback(() => {
+    localStorage.removeItem(START_PATH_KEY);
+    setStartPath(null);
+  }, []);
+
   useEffect(() => {
     void refresh();
     // Mount-only: the initial device scan.
@@ -330,5 +388,8 @@ export function useUsbBrowser(
     pushPath,
     pickAndPush,
     setView,
+    startPath,
+    saveStartPath,
+    clearStartPath,
   };
 }
