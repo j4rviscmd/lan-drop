@@ -7,6 +7,8 @@ export interface UploadProgress {
 export interface UploadDone {
   file: string;
   size: number;
+  /** Set for PC-initiated USB pulls — the pull UI already reports completion. */
+  local?: boolean;
 }
 
 /** Subscribe to the loopback SSE transfer stream; returns a cleanup function. */

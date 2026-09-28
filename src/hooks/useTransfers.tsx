@@ -63,7 +63,9 @@ export function TransfersProvider({
         // Why: "done" can arrive without a final progress event — backfill
         // total/received from the final size so the bar renders full (vanilla-JS parity).
         upsert(e.file, "in", { done: true, size: e.size, total: e.size, received: e.size });
-        toast.success(`Received ${e.file}`);
+        // USB pulls are PC-initiated — useUsbBrowser already toasts
+        // "Saved to …", so skip the duplicate "Received" toast here.
+        if (!e.local) toast.success(`Received ${e.file}`);
       },
     });
   }, [loopbackPort, upsert]);
