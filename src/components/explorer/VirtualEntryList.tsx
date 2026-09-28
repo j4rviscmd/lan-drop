@@ -25,6 +25,8 @@ interface VirtualEntryListProps {
   pathFor: (name: string) => string;
   onOpen: (entry: UsbEntry) => void;
   onToggle: (entry: UsbEntry) => void;
+  onPull: (entry: UsbEntry) => void;
+  onDelete: (entry: UsbEntry) => void;
 }
 
 /**
@@ -53,6 +55,8 @@ export function VirtualEntryList({
   pathFor,
   onOpen,
   onToggle,
+  onPull,
+  onDelete,
 }: VirtualEntryListProps) {
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -113,6 +117,8 @@ export function VirtualEntryList({
                     selected={selected.has(en.name)}
                     onOpen={onOpen}
                     onToggle={onToggle}
+                    onPull={onPull}
+                    onDelete={onDelete}
                   />
                 ) : (
                   <EntryRow
@@ -125,6 +131,8 @@ export function VirtualEntryList({
                     selected={selected.has(en.name)}
                     onOpen={onOpen}
                     onToggle={onToggle}
+                    onPull={onPull}
+                    onDelete={onDelete}
                   />
                 ),
               )}

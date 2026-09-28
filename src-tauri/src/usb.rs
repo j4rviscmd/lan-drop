@@ -283,26 +283,19 @@ pub async fn usb_apps(udid: String) -> Result<Vec<UsbApp>, String> {
     Ok(out)
 }
 
-/// Copy a file from the device into `dest_dir` (the app's Downloads folder).
-#[tauri::command]
-pub async fn usb_pull(
-    events: tauri::State<'_, tokio::sync::broadcast::Sender<server::TransferEvent>>,
-    udid: String,
-    path: String,
-    app: Option<String>,
-    dest_dir: String,
-) -> Result<String, String> {
+/// Stream one device file into `dest`, emitting per-file progress events.
+async fn pull_file(
+    afc: &mut AfcClient,
+    events: &tokio::sync::broadcast::Sender<server::TransferEvent>,
+    path: &str,
+    name: &str,
+    total: u64,
+    dest: &std::path::Path,
+) -> Result<(), String> {
     use tokio::io::AsyncWriteExt;
 
-    let name = path.rsplit('/').next().unwrap_or("file").to_string();
-    let mut afc = afc_client_for(&udid, app.as_deref()).await?;
-    let info = afc.get_file_info(&path).await.map_err(es)?;
-    let total = info.size as u64;
-    let dest_dir = std::path::PathBuf::from(dest_dir);
-    let dest = server::unique_path(&dest_dir, &server::sanitize_filename(&name)).await;
-
-    let mut fd = afc.open(&path, AfcFopenMode::RdOnly).await.map_err(es)?;
-    let mut out = tokio::fs::File::create(&dest).await.map_err(es)?;
+    let mut fd = afc.open(path, AfcFopenMode::RdOnly).await.map_err(es)?;
+    let mut out = tokio::fs::File::create(dest).await.map_err(es)?;
     let mut got: u64 = 0;
     let mut last_emit: u64 = 0;
     while got < total {
@@ -316,7 +309,7 @@ pub async fn usb_pull(
         if got - last_emit >= server::PROGRESS_CHUNK {
             last_emit = got;
             server::emit(
-                events.inner(),
+                events,
                 "upload-progress",
                 serde_json::json!({ "file": name, "received": got, "total": total }),
             );
@@ -326,18 +319,92 @@ pub async fn usb_pull(
     drop(out);
     fd.close().await.map_err(es)?;
     server::emit(
-        events.inner(),
+        events,
         "upload-done",
         serde_json::json!({
             "file": name,
             "size": got,
-            "path": server::display(&dest),
+            "path": server::display(dest),
             // PC-initiated pull: the UI toasts "Saved to …" itself, so the
             // SSE consumer must not add a second "Received" toast.
             "local": true,
         }),
     );
+    Ok(())
+}
+
+/// Recursively copy a device directory into local `dest` (created fresh, so
+/// raw entry names never collide; sanitized collisions dedupe below).
+/// Each file reports its own progress.
+async fn pull_dir(
+    afc: &mut AfcClient,
+    events: &tokio::sync::broadcast::Sender<server::TransferEvent>,
+    path: &str,
+    dest: &std::path::Path,
+) -> Result<(), String> {
+    tokio::fs::create_dir_all(dest).await.map_err(es)?;
+    for name in afc.list_dir(path).await.map_err(es)? {
+        if name == "." || name == ".." {
+            continue;
+        }
+        let full = format!("{}/{}", path.trim_end_matches('/'), name);
+        let info = afc.get_file_info(&full).await.map_err(es)?;
+        // Distinct device names can sanitize to the same local name
+        // (a:b vs a?b → a_b); unique_path dedupes instead of overwriting.
+        let local = server::unique_path(dest, &server::sanitize_filename(&name)).await;
+        if info.st_ifmt == "S_IFDIR" {
+            // Why boxed: pull_dir recursing by value would need a future of
+            // unbounded size; pinning breaks the cycle.
+            Box::pin(pull_dir(afc, events, &full, &local)).await?;
+        } else {
+            pull_file(afc, events, &full, &name, info.size as u64, &local).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Copy a file — or a whole directory tree — from the device into `dest_dir`.
+#[tauri::command]
+pub async fn usb_pull(
+    events: tauri::State<'_, tokio::sync::broadcast::Sender<server::TransferEvent>>,
+    udid: String,
+    path: String,
+    app: Option<String>,
+    dest_dir: String,
+) -> Result<String, String> {
+    let name = path.rsplit('/').next().unwrap_or("file").to_string();
+    let mut afc = afc_client_for(&udid, app.as_deref()).await?;
+    let info = afc.get_file_info(&path).await.map_err(es)?;
+    let dest_dir = std::path::PathBuf::from(dest_dir);
+    let dest = server::unique_path(&dest_dir, &server::sanitize_filename(&name)).await;
+
+    if info.st_ifmt == "S_IFDIR" {
+        pull_dir(&mut afc, events.inner(), &path, &dest).await?;
+    } else {
+        pull_file(
+            &mut afc,
+            events.inner(),
+            &path,
+            &name,
+            info.size as u64,
+            &dest,
+        )
+        .await?;
+    }
     Ok(server::display(&dest))
+}
+
+/// Delete a file, or a directory with everything inside it, on the device.
+#[tauri::command]
+pub async fn usb_delete(udid: String, path: String, app: Option<String>) -> Result<(), String> {
+    let mut afc = afc_client_for(&udid, app.as_deref()).await?;
+    let info = afc.get_file_info(&path).await.map_err(es)?;
+    if info.st_ifmt == "S_IFDIR" {
+        afc.remove_all(&path).await.map_err(es)?;
+    } else {
+        afc.remove(&path).await.map_err(es)?;
+    }
+    Ok(())
 }
 
 /// Copy a PC file onto the device under `afc_dir`.
