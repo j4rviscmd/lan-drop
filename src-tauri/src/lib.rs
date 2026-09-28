@@ -121,6 +121,16 @@ pub fn run() {
             // the "usb-devices" event (the frontend never polls usbmuxd).
             tauri::async_runtime::spawn(usb::watch_devices(app.handle().clone()));
             println!("lan-drop loopback events on http://127.0.0.1:{loopback_port}");
+            // Startup reveal: config creates the window hidden+maximized so
+            // nothing paints at the 1080x720 default; once startup is done,
+            // show the fully rendered maximized window and take foreground
+            // focus (Windows can leave it behind the foreground app).
+            // Note: reveal errors are swallowed — a failed show/focus must
+            // not abort startup setup.
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
             app.manage(ServerInfo {
                 loopback_port,
                 upload_dir: upload_dir_disp,
