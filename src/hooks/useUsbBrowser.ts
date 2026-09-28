@@ -86,10 +86,15 @@ export function useUsbBrowser(
   // Generation guard: fast navigation can outpace usb_list/usb_apps
   // responses; stale responses must not clobber the newer view.
   const gen = useRef(0);
+  // Latest browsed location — lets a finishing push refresh the grid only
+  // when the drop-time folder is still on screen (a mid-push navigation
+  // must not be yanked back to it).
+  const locRef = useRef<{ s: Scope; cw: string[] } | null>(null);
 
   const browse = useCallback(
     async (ud: string, s: Scope, cw: string[], fallback = false) => {
       const g = ++gen.current;
+      locRef.current = { s, cw };
       setLoading(true);
       // Any navigation invalidates the ticked set.
       setSelected(new Set());
@@ -364,12 +369,20 @@ export function useUsbBrowser(
           : 'Sent to the phone (media partition, folder "lan-drop").';
         setStatus(msg);
         toast.success(msg);
+        // Why: the grid shows a stale listing otherwise — the pushed file
+        // only reappeared after a reconnect (checkPaired re-lists). Refresh
+        // only the drop-time folder, and only while it is still the
+        // current view.
+        const loc = locRef.current;
+        if (loc && loc.s === scope && loc.cw.join("/") === cwd.join("/")) {
+          await browse(udid, scope, cwd);
+        }
       } catch (e) {
         setStatus(`Push failed: ${e}`);
         toast.error(`Push failed: ${e}`);
       }
     },
-    [udid, scope, track],
+    [udid, scope, cwd, browse, track],
   );
 
   const pickAndPush = useCallback(async () => {
