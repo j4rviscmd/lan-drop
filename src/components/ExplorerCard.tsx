@@ -16,6 +16,7 @@ import { Breadcrumbs } from "./explorer/Breadcrumbs";
 import { EntryRow } from "./explorer/EntryRow";
 import { EntryTile } from "./explorer/EntryTile";
 import { ScopeTile } from "./explorer/ScopeTile";
+import { SettingsDialog } from "./explorer/SettingsDialog";
 import { ViewToggle } from "./explorer/ViewToggle";
 
 const TILE_GRID = "grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2.5 pt-1";
@@ -195,7 +196,15 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
 
             <div className="flex items-start justify-between gap-2">
               <Breadcrumbs scope={usb.scope} cwd={usb.cwd} onNavigate={usb.navigate} />
-              <ViewToggle view={usb.view} onChange={usb.setView} />
+              <div className="flex shrink-0 items-center gap-2">
+                <ViewToggle view={usb.view} onChange={usb.setView} />
+                <SettingsDialog
+                  startPath={usb.startPath}
+                  canRegisterCurrent={usb.scope !== null}
+                  onSave={usb.saveStartPath}
+                  onClear={usb.clearStartPath}
+                />
+              </div>
             </div>
 
             <div className="mt-2 flex items-center gap-2">
