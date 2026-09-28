@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- lan-drop app icon: device-to-PC file transfer, dark neutral theme -->
+  <defs>
+    <linearGradient id="bg" x2="0" y2="1">
+      <stop offset="0" stop-color="#2c2c31"/>
+      <stop offset="1" stop-color="#141417"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+  <rect x="4" y="4" width="1016" height="1016" rx="226" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="8"/>
+  <!-- pull (device -> PC) -->
+  <path d="M624 336 V700 M560 632 L624 700 L688 632" fill="none" stroke="#fafafa" stroke-width="96" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- push (PC -> device) -->
+  <path d="M400 700 V336 M336 400 L400 336 L464 400" fill="none" stroke="#fafafa" stroke-opacity="0.42" stroke-width="96" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
