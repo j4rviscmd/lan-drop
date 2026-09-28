@@ -15,10 +15,6 @@ export function StorageCard({ info }: { info: ServerInfo }) {
           <span className="text-muted-foreground">Uploads arrive in</span>
           <code className="text-xs [overflow-wrap:anywhere] text-right">{info.upload_dir}</code>
         </div>
-        <div className="flex justify-between gap-3 text-[13px]">
-          <span className="text-muted-foreground">Folder served to the phone</span>
-          <code className="text-xs [overflow-wrap:anywhere] text-right">{info.serve_root}</code>
-        </div>
       </CardContent>
     </Card>
   );
