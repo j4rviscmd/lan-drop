@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 
 import { api } from "@lib/api";
@@ -304,9 +305,8 @@ export function useUsbBrowser(
     [scope, cwd, navigate],
   );
 
-  /** Tick/untick one file for a bulk pull (checkbox UI). */
+  /** Tick/untick one file or folder for a bulk pull (checkbox UI). */
   const toggleSelect = useCallback((en: UsbEntry) => {
-    if (en.is_dir) return;
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(en.name)) next.delete(en.name);
@@ -315,10 +315,11 @@ export function useUsbBrowser(
     });
   }, []);
 
-  /** Pull every ticked file sequentially — one AFC session at a time. */
+  /** Pull every ticked entry sequentially — one AFC session at a time
+   * (a ticked folder recurses inside usb_pull, not here). */
   const pullSelected = useCallback(async () => {
     if (!udid || !entries) return;
-    const list = entries.filter((e) => !e.is_dir && selected.has(e.name));
+    const list = entries.filter((e) => selected.has(e.name));
     if (list.length === 0) return;
     let ok = 0;
     for (const en of list) {
@@ -327,6 +328,28 @@ export function useUsbBrowser(
     setSelected(new Set());
     setStatus(`Pulled ${ok}/${list.length} to ${uploadDir}.`);
   }, [udid, entries, selected, pull, uploadDir]);
+
+  /** Native-confirm, delete on the device, then reload the listing. */
+  const deleteEntry = useCallback(
+    async (en: UsbEntry) => {
+      if (!udid) return;
+      const msg = en.is_dir
+        ? `Delete "${en.name}" and everything inside it from the device?`
+        : `Delete "${en.name}" from the device?`;
+      if (!(await confirm(msg, { title: "Delete from device", kind: "warning" }))) return;
+      try {
+        await api.usbDelete(udid, fullPath(en.name), scope?.type === "app" ? scope.id : null);
+        toast.success(`Deleted ${en.name}.`);
+        // Reload the current folder so the listing drops the deleted entry
+        // (navigate() re-browses the same scope/cwd and clears the ticks).
+        navigate(scope, cwd);
+      } catch (e) {
+        setStatus(`Delete failed: ${e}`);
+        toast.error(`Delete failed: ${e}`);
+      }
+    },
+    [udid, scope, cwd, fullPath, navigate],
+  );
 
   const pushPath = useCallback(
     async (src: string) => {
@@ -420,6 +443,8 @@ export function useUsbBrowser(
     setSelected,
     toggleSelect,
     pullSelected,
+    pull,
+    deleteEntry,
     refresh,
     pair,
     selectDevice,
