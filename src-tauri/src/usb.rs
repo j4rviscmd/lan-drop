@@ -297,6 +297,9 @@ pub async fn usb_pull(
             "file": name,
             "size": got,
             "path": server::display(&dest),
+            // PC-initiated pull: the UI toasts "Saved to …" itself, so the
+            // SSE consumer must not add a second "Received" toast.
+            "local": true,
         }),
     );
     Ok(server::display(&dest))
@@ -356,6 +359,9 @@ pub async fn usb_push(
             "file": name,
             "size": sent,
             "path": target,
+            // PC-initiated push: the UI toasts "Sent …" itself, so the SSE
+            // consumer must not add a bogus "Received" toast.
+            "local": true,
         }),
     );
     Ok(())
