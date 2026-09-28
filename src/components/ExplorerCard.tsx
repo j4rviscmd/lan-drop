@@ -1,21 +1,20 @@
-import { ArrowDownToLine, Search, Upload } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-
 import type { UsbBrowser } from "@hooks/useUsbBrowser";
 import { cn } from "@lib/utils";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Badge } from "@ui/badge";
 import { Button } from "@ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@ui/card";
 import { Input } from "@ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ui/select";
 import { Skeleton } from "@ui/skeleton";
+import { ArrowDownToLine, Search, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Breadcrumbs } from "./explorer/Breadcrumbs";
-import { VirtualEntryList } from "./explorer/VirtualEntryList";
 import { ScopeTile } from "./explorer/ScopeTile";
 import { SettingsDialog } from "./explorer/SettingsDialog";
 import { ViewToggle } from "./explorer/ViewToggle";
+import { VirtualEntryList } from "./explorer/VirtualEntryList";
 
 const TILE_GRID = "grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2.5 pt-1";
 
@@ -33,10 +32,13 @@ export function ExplorerCard({ usb }: { usb: UsbBrowser }) {
   // mounts once pairing succeeds — a [] dep would run before it exists and
   // never observe it.
   const [listWidth, setListWidth] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: usb.paired is an intentional re-run trigger — see the comment above.
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
-    const ro = new ResizeObserver((es) => setListWidth(es[0]!.contentRect.width));
+    const ro = new ResizeObserver((es) => {
+      for (const e of es) setListWidth(e.contentRect.width);
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, [usb.paired]);
@@ -63,6 +65,7 @@ export function ExplorerCard({ usb }: { usb: UsbBrowser }) {
   // typed for one folder never leaks into the next view — and the virtualized
   // list restarts at the top like any file browser (stale scroll offsets
   // would land mid-list on estimates).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: usb.scope/usb.cwd are intentional re-run triggers — see the comment above.
   useEffect(() => {
     setQuery("");
     listRef.current?.scrollTo({ top: 0 });
@@ -94,6 +97,7 @@ export function ExplorerCard({ usb }: { usb: UsbBrowser }) {
     listing = (
       <div className={TILE_GRID}>
         {Array.from({ length: 8 }, (_, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: fixed 8-slot loading skeleton; never reorders.
           <Skeleton key={i} className="aspect-[1/1.35] rounded-lg" />
         ))}
       </div>
@@ -188,7 +192,12 @@ export function ExplorerCard({ usb }: { usb: UsbBrowser }) {
           </Button>
           {/* Why: Pair is unnecessary once paired; refresh() -> checkPaired() re-detects unpaired devices and re-shows this button. */}
           {!usb.paired && (
-            <Button variant="outline" size="sm" className="shrink-0" onClick={() => void usb.pair()}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => void usb.pair()}
+            >
               Pair
             </Button>
           )}
@@ -258,10 +267,7 @@ export function ExplorerCard({ usb }: { usb: UsbBrowser }) {
                 </div>
               ) : null}
               <div
-                className={cn(
-                  "shrink-0 gap-2",
-                  usb.scope !== null ? "grid grid-cols-2" : "flex",
-                )}
+                className={cn("shrink-0 gap-2", usb.scope !== null ? "grid grid-cols-2" : "flex")}
               >
                 {/* Why: gate on the whole basket, not this folder's count —
                     ticked items can live in other folders. */}
@@ -310,11 +316,11 @@ export function ExplorerCard({ usb }: { usb: UsbBrowser }) {
 
             <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
               Initial view lists your installed apps — tap one to browse its files (the app must
-              allow file access). "Media partition" holds DCIM photos and recordings. Tick files
-              or folders — they gather in the "Selected" list at the left, across folders — then
-              press "Pull to PC" to download them into the upload folder shown under Storage.
-              Right-click an entry to save, copy its name, or delete it on the device. Files sent
-              while inside an app land in its Documents.
+              allow file access). "Media partition" holds DCIM photos and recordings. Tick files or
+              folders — they gather in the "Selected" list at the left, across folders — then press
+              "Pull to PC" to download them into the upload folder shown under Storage. Right-click
+              an entry to save, copy its name, or delete it on the device. Files sent while inside
+              an app land in its Documents.
             </p>
           </div>
         ) : null}

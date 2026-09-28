@@ -1,16 +1,15 @@
+import { subscribeUploads } from "@lib/sse";
+import type { Transfer, TransferDirection } from "@lib/types";
 import {
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from "react";
 import { toast } from "sonner";
-
-import { subscribeUploads } from "@lib/sse";
-import type { Transfer, TransferDirection } from "@lib/types";
 
 interface TransfersApi {
   transfers: Transfer[];

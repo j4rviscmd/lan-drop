@@ -16,8 +16,7 @@ export const api = {
   /** Backend pushes the usbmuxd device set whenever it changes (watch_devices). */
   onUsbDevices: (cb: (devs: UsbDeviceEntry[]) => void): Promise<() => void> =>
     listen<UsbDeviceEntry[]>("usb-devices", (e) => cb(e.payload)),
-  usbDeviceInfo: (udid: string) =>
-    invoke<UsbDeviceInfo>("usb_device_info", { udid }),
+  usbDeviceInfo: (udid: string) => invoke<UsbDeviceInfo>("usb_device_info", { udid }),
   usbPair: (udid: string) => invoke<void>("usb_pair", { udid }),
 
   usbApps: (udid: string) => invoke<UsbApp[]>("usb_apps", { udid }),

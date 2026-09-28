@@ -1,8 +1,7 @@
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useState } from "react";
-
 import type { UsbView } from "@hooks/useUsbBrowser";
 import type { UsbEntry } from "@lib/types";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useMemo, useState } from "react";
 
 import { EntryRow } from "./EntryRow";
 import { EntryTile } from "./EntryTile";
@@ -103,7 +102,11 @@ export function VirtualEntryList({
           >
             <div
               className={view === "grid" ? "grid gap-2.5" : undefined}
-              style={view === "grid" ? { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` } : undefined}
+              style={
+                view === "grid"
+                  ? { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }
+                  : undefined
+              }
             >
               {rows[v.index]?.map((en) =>
                 view === "grid" ? (

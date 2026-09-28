@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import type { Scope } from "@lib/types";
 
 import {
   Breadcrumb,
@@ -8,8 +8,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@ui/breadcrumb";
-
-import type { Scope } from "@lib/types";
+import { Fragment } from "react";
 
 interface BreadcrumbsProps {
   scope: Scope;
@@ -50,7 +49,9 @@ export function Breadcrumbs({ scope, cwd, onNavigate }: BreadcrumbsProps) {
         ) : null}
 
         {cwd.map((seg, i) => (
-          <Fragment key={`${i}-${seg}`}>
+          // Why: stable path-prefix key — navigating changes the breadcrumb tail, and index-based
+          // keys would remap React identity (plus trip biome's noArrayIndexKey).
+          <Fragment key={cwd.slice(0, i + 1).join("/")}>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               {i + 1 === cwd.length ? (

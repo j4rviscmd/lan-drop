@@ -1,0 +1,10 @@
+#!/bin/sh
+# Failing formatter must fail the commit, not fall through to `git add -u`.
+set -e
+# Forced formatting for both halves of the codebase; runs before every commit.
+# Wired via core.hooksPath (.githooks), set automatically by the npm "prepare" script.
+# ponytail: `git add -u` stages all tracked modifications — commit unrelated
+# unstaged work separately if you keep any.
+cargo fmt --manifest-path src-tauri/Cargo.toml
+npm run format
+git add -u

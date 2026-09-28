@@ -1,7 +1,6 @@
-import type { ServerInfo } from "@lib/types";
-
 import { useTransfers } from "@hooks/useTransfers";
 import { useUsbBrowser } from "@hooks/useUsbBrowser";
+import type { ServerInfo } from "@lib/types";
 
 import { ExplorerCard } from "./ExplorerCard";
 import { SelectionCard } from "./SelectionCard";
