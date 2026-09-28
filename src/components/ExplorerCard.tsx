@@ -1,4 +1,4 @@
-import { Search, Upload } from "lucide-react";
+import { ArrowDownToLine, Search, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
@@ -68,6 +68,12 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
     () => usb.apps?.filter((a) => a.name.toLowerCase().includes(q)) ?? null,
     [usb.apps, q],
   );
+  const fileEntries = useMemo(
+    () => filteredEntries?.filter((e) => !e.is_dir) ?? [],
+    [filteredEntries],
+  );
+  const selectedCount = fileEntries.filter((e) => usb.selected.has(e.name)).length;
+  const allSelected = fileEntries.length > 0 && selectedCount === fileEntries.length;
 
   const entriesEmpty = filteredEntries?.length === 0;
   const appsEmpty = filteredApps?.length === 0;
@@ -132,7 +138,9 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
               path={usb.pathFor(en.name)}
               app={usb.scope?.type === "app" ? usb.scope.id : null}
               rootRef={listRef}
+              selected={usb.selected.has(en.name)}
               onOpen={usb.openEntry}
+              onToggle={usb.toggleSelect}
             />
           ))}
         </div>
@@ -205,6 +213,55 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
             </div>
 
             <div className="mt-2 flex items-center gap-2">
+              {!usb.loading && usb.scope !== null && fileEntries.length > 0 ? (
+                <>
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = selectedCount > 0 && !allSelected;
+                    }}
+                    onChange={(e) =>
+                      usb.setSelected(
+                        e.target.checked ? new Set(fileEntries.map((f) => f.name)) : new Set(),
+                      )
+                    }
+                    aria-label="Select all files"
+                    className="size-3.5 shrink-0 cursor-pointer accent-primary"
+                  />
+                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                    {selectedCount}/{fileEntries.length} selected
+                  </span>
+                </>
+              ) : null}
+              <div
+                className={cn(
+                  "shrink-0 gap-2",
+                  usb.scope !== null ? "grid grid-cols-2" : "flex",
+                )}
+              >
+                {usb.scope !== null ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={selectedCount === 0}
+                    onClick={() => void usb.pullSelected()}
+                  >
+                    <ArrowDownToLine className="size-3.5 shrink-0" />
+                    Pull to PC
+                  </Button>
+                ) : null}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => void usb.pickAndPush()}
+                >
+                  <Upload className="size-3.5 shrink-0" />
+                  Send a file to the phone
+                </Button>
+              </div>
               <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -215,15 +272,6 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
                   className="h-8 pl-8 text-[13px]"
                 />
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => void usb.pickAndPush()}
-              >
-                <Upload className="size-3.5" />
-                Send a file to the phone…
-              </Button>
             </div>
 
             <div
@@ -237,9 +285,9 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
 
             <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
               Initial view lists your installed apps — tap one to browse its files (the app must
-              allow file access). "Media partition" holds DCIM photos and recordings. Tap a file
-              to pull it into the PC's Downloads\lan-drop. Files sent while inside an app land in
-              its Documents.
+              allow file access). "Media partition" holds DCIM photos and recordings. Tick files,
+              then press "Pull to PC" to download them into the PC's Downloads\lan-drop. Files
+              sent while inside an app land in its Documents.
             </p>
           </div>
         ) : null}
