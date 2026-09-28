@@ -38,6 +38,16 @@ export interface StartPath {
   cwd: string[];
 }
 
+/** A ticked device item — carries its own location so the selection basket
+ *  survives navigation and one bulk pull/delete can span folders. */
+export interface SelectedEntry {
+  scope: Exclude<Scope, null>;
+  cwd: string[];
+  name: string;
+  is_dir: boolean;
+  size: number;
+}
+
 /** in = arriving on the PC (upload / pull); out = leaving the PC (push). */
 export type TransferDirection = "in" | "out";
 
