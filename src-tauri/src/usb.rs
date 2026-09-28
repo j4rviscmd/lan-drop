@@ -13,6 +13,8 @@ use idevice::{
     provider::IdeviceProvider,
     services::{
         afc::{opcode::AfcFopenMode, AfcClient},
+        house_arrest::HouseArrestClient,
+        installation_proxy::InstallationProxyClient,
         lockdown::LockdownClient,
     },
     usbmuxd::{UsbmuxdAddr, UsbmuxdConnection, UsbmuxdDevice},
@@ -152,8 +154,12 @@ pub struct UsbEntry {
 }
 
 #[tauri::command]
-pub async fn usb_list(udid: String, path: String) -> Result<Vec<UsbEntry>, String> {
-    let mut afc = afc_client(&udid).await?;
+pub async fn usb_list(
+    udid: String,
+    path: String,
+    app: Option<String>,
+) -> Result<Vec<UsbEntry>, String> {
+    let mut afc = afc_client_for(&udid, app.as_deref()).await?;
     let names = afc.list_dir(&path).await.map_err(es)?;
     let mut out = Vec::new();
     for name in names {
@@ -184,18 +190,77 @@ async fn afc_client(udid: &str) -> Result<AfcClient, String> {
     AfcClient::connect(&provider).await.map_err(es)
 }
 
+/// AFC for an app when `app` is a bundle_id, else the media partition.
+/// VendDocuments (what iTunes file sharing shows) is the only flavor modern
+/// iOS vends to third-party hosts — VendContainer answers
+/// InstallationLookupFailed since iOS 8.3. The session still roots at the app
+/// container: only the /Documents subtree is readable, so app-scope paths
+/// from the UI must be prefixed /Documents.
+async fn afc_client_for(udid: &str, app: Option<&str>) -> Result<AfcClient, String> {
+    match app {
+        None => afc_client(udid).await,
+        Some(bundle_id) => {
+            let (dev, addr) = device(udid).await?;
+            let provider = dev.to_provider(addr, LABEL);
+            HouseArrestClient::connect(&provider)
+                .await
+                .map_err(es)?
+                .vend_documents(bundle_id)
+                .await
+                .map_err(|e| {
+                    format!("app documents not accessible (the app must allow file access): {e}")
+                })
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct UsbApp {
+    pub bundle_id: String,
+    pub name: String,
+}
+
+/// User-installed apps — the browser's initial view.
+#[tauri::command]
+pub async fn usb_apps(udid: String) -> Result<Vec<UsbApp>, String> {
+    let (dev, addr) = device(&udid).await?;
+    let provider = dev.to_provider(addr, LABEL);
+    let mut proxy = InstallationProxyClient::connect(&provider)
+        .await
+        .map_err(es)?;
+    let apps = proxy.get_apps(Some("User"), None).await.map_err(es)?;
+    let mut out: Vec<UsbApp> = apps
+        .into_iter()
+        .map(|(bundle_id, info)| UsbApp {
+            name: info
+                .as_dictionary()
+                .and_then(|d| {
+                    d.get("CFBundleDisplayName")
+                        .or_else(|| d.get("CFBundleName"))
+                })
+                .and_then(|v| v.as_string())
+                .unwrap_or(&bundle_id)
+                .to_string(),
+            bundle_id,
+        })
+        .collect();
+    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(out)
+}
+
 /// Copy a file from the device into `dest_dir` (the app's Downloads folder).
 #[tauri::command]
 pub async fn usb_pull(
     events: tauri::State<'_, tokio::sync::broadcast::Sender<server::TransferEvent>>,
     udid: String,
     path: String,
+    app: Option<String>,
     dest_dir: String,
 ) -> Result<String, String> {
     use tokio::io::AsyncWriteExt;
 
     let name = path.rsplit('/').next().unwrap_or("file").to_string();
-    let mut afc = afc_client(&udid).await?;
+    let mut afc = afc_client_for(&udid, app.as_deref()).await?;
     let info = afc.get_file_info(&path).await.map_err(es)?;
     let total = info.size as u64;
     let dest_dir = std::path::PathBuf::from(dest_dir);
@@ -244,6 +309,7 @@ pub async fn usb_push(
     udid: String,
     src: String,
     afc_dir: String,
+    app: Option<String>,
 ) -> Result<(), String> {
     use tokio::io::AsyncReadExt;
 
@@ -257,7 +323,7 @@ pub async fn usb_push(
             .unwrap_or("file"),
     );
 
-    let mut afc = afc_client(&udid).await?;
+    let mut afc = afc_client_for(&udid, app.as_deref()).await?;
     let _ = afc.mk_dir(&afc_dir).await; // exists is fine
     let target = format!("{}/{}", afc_dir.trim_end_matches('/'), name);
     let mut fd = afc.open(&target, AfcFopenMode::WrOnly).await.map_err(es)?;
@@ -293,4 +359,192 @@ pub async fn usb_push(
         }),
     );
     Ok(())
+}
+
+/// How much of a file's head to read when looking for an EXIF thumbnail.
+/// The APP1/Exif segment sits right after the JPEG SOI marker, so 128 KiB
+/// is far more than any camera writes before the pixel data starts.
+const THUMB_HEAD: usize = 128 * 1024;
+
+/// Embedded EXIF thumbnail of a JPEG on the device, as a base64 data URL.
+/// `Ok(None)` = no usable embedded thumbnail (caller shows a type icon).
+// ponytail: JPEG EXIF only — HEIC thumbnails need a HEVC decode (Windows
+// codec); UI falls back to type icons. Add HEIC if the camera roll is
+// high-efficiency-first and icons feel lacking.
+#[tauri::command]
+pub async fn usb_thumbnail(
+    udid: String,
+    path: String,
+    app: Option<String>,
+) -> Result<Option<String>, String> {
+    let mut afc = afc_client_for(&udid, app.as_deref()).await?;
+    let mut fd = afc.open(&path, AfcFopenMode::RdOnly).await.map_err(es)?;
+    let head = fd.read_n(THUMB_HEAD).await.map_err(es)?;
+    fd.close().await.map_err(es)?;
+    Ok(exif_thumbnail(&head).map(|j| format!("data:image/jpeg;base64,{}", b64_encode(j))))
+}
+
+/// Find the IFD1 (thumbnail) JPEG inside a JPEG blob's APP1/Exif segment.
+fn exif_thumbnail(jpg: &[u8]) -> Option<&[u8]> {
+    if jpg.get(0..2) != Some(&[0xff, 0xd8][..]) {
+        return None; // not a JPEG
+    }
+    let mut i = 2;
+    while i + 4 <= jpg.len() {
+        if jpg[i] != 0xff {
+            return None; // lost segment sync
+        }
+        let marker = jpg[i + 1];
+        if matches!(marker, 0x01 | 0xd8 | 0xd9 | 0xda) {
+            return None; // reached padding/SOI/EOI/SOS without an Exif APP1
+        }
+        let seg = u16::from_be_bytes([jpg[i + 2], jpg[i + 3]]) as usize;
+        if seg < 2 || i + 2 + seg > jpg.len() {
+            return None; // corrupt length
+        }
+        if marker == 0xe1 && jpg.get(i + 4..i + 10) == Some(&b"Exif\0\0"[..]) {
+            // TIFF header starts 6 bytes into the Exif payload.
+            return exif_ifd1_thumb(jpg, i + 10);
+        }
+        i += 2 + seg;
+    }
+    None
+}
+
+/// IFD1 thumbnail via JPEGInterchangeFormat (0x0201) / length (0x0202).
+/// Offsets are relative to the TIFF header at `tiff` within the whole blob —
+/// the thumbnail bytes may legally spill past the APP1 segment boundary.
+fn exif_ifd1_thumb(buf: &[u8], tiff: usize) -> Option<&[u8]> {
+    let le = match buf.get(tiff..tiff + 2)? {
+        b"II" => true,
+        b"MM" => false,
+        _ => return None,
+    };
+    let rd16 = |o: usize| -> Option<u16> {
+        let s = buf.get(o..o + 2)?;
+        Some(if le {
+            u16::from_le_bytes([s[0], s[1]])
+        } else {
+            u16::from_be_bytes([s[0], s[1]])
+        })
+    };
+    let rd32 = |o: usize| -> Option<u32> {
+        let s = buf.get(o..o + 4)?;
+        Some(if le {
+            u32::from_le_bytes([s[0], s[1], s[2], s[3]])
+        } else {
+            u32::from_be_bytes([s[0], s[1], s[2], s[3]])
+        })
+    };
+    let ifd0 = tiff + rd32(tiff + 4)? as usize;
+    let n0 = rd16(ifd0)? as usize;
+    let ifd1 = tiff + rd32(ifd0.checked_add(2 + 12 * n0)?)? as usize;
+    if ifd1 == tiff {
+        return None; // no IFD1
+    }
+    let n1 = rd16(ifd1)? as usize;
+    let (mut off, mut len) = (None, 0usize);
+    for k in 0..n1 {
+        let e = ifd1.checked_add(2 + 12 * k)?;
+        match rd16(e)? {
+            0x0201 => off = Some(tiff + rd32(e + 8)? as usize),
+            0x0202 => len = rd32(e + 8)? as usize,
+            _ => {}
+        }
+    }
+    let off = off?;
+    let t = buf.get(off..off.checked_add(len)?)?;
+    (t.get(0..2) == Some(&[0xff, 0xd8][..])).then_some(t)
+}
+
+/// Standard base64 with padding — encode-only, too small to warrant a crate.
+fn b64_encode(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for c in data.chunks(3) {
+        let mut b = [0u8; 4];
+        b[1..1 + c.len()].copy_from_slice(c);
+        let n = u32::from_be_bytes(b);
+        out.push(T[n as usize >> 18 & 63] as char);
+        out.push(T[n as usize >> 12 & 63] as char);
+        out.push(if c.len() > 1 {
+            T[n as usize >> 6 & 63] as char
+        } else {
+            '='
+        });
+        out.push(if c.len() > 2 {
+            T[n as usize & 63] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Minimal JPEG: SOI + APP1(Exif, empty IFD0, IFD1 pointing at a tiny
+    /// embedded thumb) + SOS + EOI, in either byte order.
+    fn jpg_with_thumb(le: bool) -> Vec<u8> {
+        let put16 = |v: u16| if le { v.to_le_bytes() } else { v.to_be_bytes() };
+        let put32 = |v: u32| if le { v.to_le_bytes() } else { v.to_be_bytes() };
+        let thumb = [0xff, 0xd8, 0x00, 0xff, 0xd9]; // tiny fake JPEG
+
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(if le { b"II" } else { b"MM" });
+        tiff.extend_from_slice(&put16(42));
+        tiff.extend_from_slice(&put32(8)); // IFD0 at offset 8
+        tiff.extend_from_slice(&put16(0)); // IFD0: 0 entries
+        let ifd1_off = 14; // 8 (IFD0) + 2 (count) + 0 entries * 12 + 4 (next-IFD field)
+        tiff.extend_from_slice(&put32(ifd1_off as u32)); // next IFD = IFD1
+        tiff.extend_from_slice(&put16(2)); // IFD1: 2 entries
+        let thumb_off = ifd1_off + 2 + 12 * 2 + 4;
+        for (tag, val) in [(0x0201u16, thumb_off as u32), (0x0202, thumb.len() as u32)] {
+            tiff.extend_from_slice(&put16(tag));
+            tiff.extend_from_slice(&put16(4)); // type LONG
+            tiff.extend_from_slice(&put32(1)); // count 1
+            tiff.extend_from_slice(&put32(val));
+        }
+        tiff.extend_from_slice(&put32(0)); // no IFD2
+        tiff.extend_from_slice(&thumb);
+
+        let mut jpg = vec![0xff, 0xd8];
+        jpg.extend_from_slice(&[0xff, 0xe1]);
+        jpg.extend_from_slice(&((2 + 6 + tiff.len()) as u16).to_be_bytes()); // JPEG segments are always BE
+        jpg.extend_from_slice(b"Exif\0\0");
+        jpg.extend_from_slice(&tiff);
+        jpg.extend_from_slice(&[0xff, 0xda, 0x00, 0x02, 0x00, 0x00]); // SOS
+        jpg.extend_from_slice(&[0xff, 0xd9]); // EOI
+        jpg
+    }
+
+    #[test]
+    fn finds_exif_thumb_both_endians() {
+        for le in [true, false] {
+            let jpg = jpg_with_thumb(le);
+            assert_eq!(
+                exif_thumbnail(&jpg),
+                Some(&[0xff, 0xd8, 0x00, 0xff, 0xd9][..])
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_thumbless_inputs() {
+        assert_eq!(exif_thumbnail(b"not a jpeg at all"), None);
+        assert_eq!(exif_thumbnail(&[0xff, 0xd8, 0xff, 0xd9]), None);
+        assert_eq!(exif_thumbnail(&[]), None);
+    }
+
+    #[test]
+    fn b64_known_vectors() {
+        assert_eq!(b64_encode(b""), "");
+        assert_eq!(b64_encode(b"f"), "Zg==");
+        assert_eq!(b64_encode(b"fo"), "Zm8=");
+        assert_eq!(b64_encode(b"foo"), "Zm9v");
+        assert_eq!(b64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(b64_encode(&[0xfb, 0xff, 0xef]), "+//v");
+    }
 }

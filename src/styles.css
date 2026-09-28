@@ -18,15 +18,6 @@ h2 { font-size: 13px; color: #9aa3b2; text-transform: uppercase; letter-spacing:
   padding: 16px;
   margin-bottom: 14px;
 }
-.qr-card { text-align: center; }
-#qr svg { width: 220px; height: 220px; border-radius: 10px; background: #fff; }
-.url-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; }
-.url-row code { font-size: 15px; }
-#copy {
-  background: #1f2740; color: #7aa2f7; border: 1px solid #33406b; border-radius: 8px;
-  padding: 6px 12px; font-size: 13px; cursor: pointer;
-}
-#copy:hover { background: #26304e; }
 .hint { font-size: 12px; color: #9aa3b2; line-height: 1.5; margin: 10px 0 0; }
 .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin: 4px 0; }
 .kv span { color: #9aa3b2; }
@@ -40,13 +31,89 @@ h2 { font-size: 13px; color: #9aa3b2; text-transform: uppercase; letter-spacing:
 .usb-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
 .usb-row select { flex: 1; background: #0f1115; color: #e6e8ec; border: 1px solid #232733; border-radius: 8px; padding: 7px 9px; font-size: 13px; min-width: 0; }
 .usb-row button { flex: none; }
-.entries { list-style: none; margin: 8px 0; padding: 0; max-height: 300px; overflow-y: auto; }
-.entry { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid #232733; font-size: 14px; cursor: pointer; }
-.entry:last-child { border-bottom: 0; }
-.entry .icon { width: 22px; text-align: center; flex: none; }
-.entry .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.entry .meta { color: #9aa3b2; font-size: 12px; flex: none; }
-.entry .pull { color: #7aa2f7; flex: none; font-size: 15px; }
-.entry.dir:hover, .entry:not(.dir):hover { background: #171a21; }
-.crumbs { font-size: 13px; color: #9aa3b2; margin-top: 6px; word-break: break-all; }
+.browser-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.crumbs { flex: 1; min-width: 0; font-size: 13px; color: #9aa3b2; word-break: break-all; }
+.view-toggle { display: flex; gap: 2px; flex: none; background: #0f1115; border: 1px solid #232733; border-radius: 8px; padding: 3px; }
+.vt { display: grid; place-items: center; width: 30px; height: 26px; background: none; border: 0; border-radius: 6px; color: #9aa3b2; cursor: pointer; }
+.vt svg, .entry svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.vt svg { width: 15px; height: 15px; }
+.vt:hover { color: #e6e8ec; }
+.vt[aria-pressed="true"] { background: #1f2740; color: #7aa2f7; }
+.entries { margin: 10px 0; max-height: 340px; overflow-y: auto; overscroll-behavior: contain; }
+.entry { font-family: inherit; font-size: 14px; background: none; border: 0; color: inherit; padding: 0; cursor: pointer; text-align: left; }
+.entry:focus-visible, .vt:focus-visible { outline: 2px solid #7aa2f7; outline-offset: 2px; }
+.entry .thumb { display: grid; place-items: center; color: #9aa3b2; overflow: hidden; }
+.entry .thumb svg { width: 19px; height: 19px; }
+.entry .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.entry.dir .thumb, .entry.dir .go { color: #7aa2f7; }
+.entry .go { display: grid; place-items: center; color: #9aa3b2; }
+.empty { grid-column: 1 / -1; margin: 26px 0; text-align: center; color: #9aa3b2; font-size: 13px; }
+/* grid view */
+.entries.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; align-content: start; }
+.entries.grid .entry { position: relative; display: flex; flex-direction: column; gap: 6px; background: #0f1115; border: 1px solid #232733; border-radius: 10px; padding: 8px; }
+.entries.grid .entry:hover { background: #141824; border-color: #33406b; }
+.entries.grid .thumb { aspect-ratio: 1; border-radius: 6px; background: #171a21; }
+.entries.grid .thumb svg { width: 32px; height: 32px; }
+.entries.grid .nm { font-size: 12px; line-height: 1.35; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; min-height: 2.7em; }
+.entries.grid .meta { font-size: 11px; color: #9aa3b2; }
+.entries.grid .go { position: absolute; top: 12px; right: 12px; width: 26px; height: 26px; border-radius: 6px; background: rgba(15, 17, 21, 0.75); opacity: 0; transition: opacity 0.12s; }
+.entries.grid .entry:hover .go { opacity: 1; }
+.entries.grid .go svg { width: 14px; height: 14px; }
+/* list view */
+.entries.list .entry { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 4px; border-bottom: 1px solid #232733; border-radius: 6px; }
+.entries.list .entry:hover { background: #141824; }
+.entries.list .thumb { width: 22px; height: 22px; flex: none; border-radius: 4px; }
+.entries.list .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entries.list .meta { color: #9aa3b2; font-size: 12px; flex: none; }
+.entries.list .go { flex: none; width: 18px; height: 18px; }
+.entries.list .go svg { width: 16px; height: 16px; }
 .crumbs a { color: #7aa2f7; text-decoration: none; }
+.entry.noaccess { opacity: 0.45; }
+.entries.grid .entry.noaccess:hover { background: #0f1115; border-color: #232733; cursor: not-allowed; }
+.entries.list .entry.noaccess:hover { background: none; cursor: not-allowed; }
+
+/* two-column layout: cards left, explorer owning the right side.
+   The page never scrolls — left column and file list scroll internally. */
+@media (min-width: 860px) {
+  main {
+    max-width: none;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 16px;
+  }
+  main > h1, main > .status { flex: none; }
+  main > .status { margin-bottom: 10px; }
+  .cols {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 400px minmax(0, 1fr);
+    gap: 14px;
+  }
+  .col-left {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .col-left .card { flex: none; margin-bottom: 14px; }
+  .col-left .card:last-child { margin-bottom: 0; }
+  .col-left .transfers { margin-top: auto; }
+  .transfers #transfers { max-height: 200px; overflow-y: auto; }
+  .col-right { display: flex; flex-direction: column; min-height: 0; }
+  .col-right .explorer {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .col-right .explorer #usb-browser:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  #usb-entries { flex: 1; max-height: none; min-height: 0; }
+}
