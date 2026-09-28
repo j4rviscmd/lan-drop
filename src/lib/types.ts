@@ -2,11 +2,8 @@
 // Keep field names byte-identical with src-tauri/src/lib.rs and usb.rs.
 
 export interface ServerInfo {
-  url: string;
-  port: number;
   /** Loopback plain-HTTP port for the desktop webview's EventSource. */
   loopback_port: number;
-  qr_svg: string;
   upload_dir: string;
 }
 

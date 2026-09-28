@@ -22,9 +22,6 @@ export function Shell({
         <h1 className="m-0 text-[22px] font-semibold">
           lan<span className="text-primary">·</span>drop
         </h1>
-        <p className="mt-1 mb-0 text-[13px] text-emerald-400">
-          Server running · port {info.port}
-        </p>
       </header>
       <div className="mt-4 grid flex-1 gap-3.5 min-[860px]:grid-cols-[400px_minmax(0,1fr)] min-[860px]:min-h-0">
         <div className="flex flex-col gap-3.5 min-[860px]:min-h-0 min-[860px]:overflow-y-auto">
