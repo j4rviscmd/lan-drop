@@ -89,6 +89,39 @@ async fn duplicate_upload_gets_suffixed_name() {
 }
 
 #[tokio::test]
+async fn upload_dir_switches_at_runtime() {
+    // set_upload_dir swaps the destination on the live state; the next
+    // upload must land in the new folder without rebuilding the router.
+    let root = temp_root("swap");
+    let (tx, _keep) = tokio::sync::broadcast::channel(4);
+    let state = server::new_state(tx, root.join("a"), None).unwrap();
+    let app = server::router(state.clone());
+
+    let body = "--X\r\n\
+        Content-Disposition: form-data; name=\"file\"; filename=\"f.txt\"\r\n\r\n\
+        x\r\n\
+        --X--\r\n";
+    for dir in ["a", "b"] {
+        if dir == "b" {
+            std::fs::create_dir_all(root.join("b")).unwrap();
+            state.set_upload_dir(root.join("b").canonicalize().unwrap());
+        }
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::post("/api/upload")
+                    .header("content-type", "multipart/form-data; boundary=X")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "dir={dir}");
+        assert!(root.join(dir).join("f.txt").exists(), "dir={dir}");
+    }
+}
+
+#[tokio::test]
 async fn upload_over_2mb_succeeds() {
     // axum's DefaultBodyLimit (2 MiB) used to abort large multipart bodies.
     let root = temp_root("big");

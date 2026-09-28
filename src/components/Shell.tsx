@@ -9,7 +9,13 @@ import { TransfersCard } from "./TransfersCard";
  * The page never scrolls at ≥860px — the left column and the file list
  * scroll internally.
  */
-export function Shell({ info }: { info: ServerInfo }) {
+export function Shell({
+  info,
+  onUploadDirChanged,
+}: {
+  info: ServerInfo;
+  onUploadDirChanged: () => void;
+}) {
   return (
     <div className="mx-auto flex min-h-dvh max-w-[640px] flex-col p-5 pb-8 min-[860px]:h-dvh min-[860px]:max-w-none min-[860px]:overflow-hidden min-[860px]:pb-4">
       <header className="shrink-0">
@@ -22,7 +28,7 @@ export function Shell({ info }: { info: ServerInfo }) {
       </header>
       <div className="mt-4 grid flex-1 gap-3.5 min-[860px]:grid-cols-[400px_minmax(0,1fr)] min-[860px]:min-h-0">
         <div className="flex flex-col gap-3.5 min-[860px]:min-h-0 min-[860px]:overflow-y-auto">
-          <StorageCard info={info} />
+          <StorageCard info={info} onUploadDirChanged={onUploadDirChanged} />
           <TransfersCard />
         </div>
         <ExplorerCard uploadDir={info.upload_dir} />

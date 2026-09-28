@@ -298,8 +298,8 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
             <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
               Initial view lists your installed apps — tap one to browse its files (the app must
               allow file access). "Media partition" holds DCIM photos and recordings. Tick files,
-              then press "Pull to PC" to download them into the PC's Downloads\lan-drop. Files
-              sent while inside an app land in its Documents.
+              then press "Pull to PC" to download them into the upload folder shown
+              under Storage. Files sent while inside an app land in its Documents.
             </p>
           </div>
         ) : null}

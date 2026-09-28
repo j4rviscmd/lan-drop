@@ -29,6 +29,7 @@ time = { version = "0.3.55", features = ["formatting", "local-offset"] }
 idevice = { version = "0.1.68", features = ["usbmuxd", "afc", "pair", "house_arrest", "installation_proxy"] }
 tauri-plugin-dialog = "2.8.0"
 uuid = { version = "1.26.1", features = ["v4"] }
+parking_lot = "0.12"
 # Debug-only tooling, but the gate lives in lib.rs (#[cfg(debug_assertions)]
 # around the plugin registration): cargo does not support debug_assertions
 # for dependency selection (it warns and currently compiles this into release
