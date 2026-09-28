@@ -178,9 +178,12 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
           >
             Refresh
           </Button>
-          <Button variant="outline" size="sm" className="shrink-0" onClick={() => void usb.pair()}>
-            Pair
-          </Button>
+          {/* Why: Pair is unnecessary once paired; refresh() -> checkPaired() re-detects unpaired devices and re-shows this button. */}
+          {!usb.paired && (
+            <Button variant="outline" size="sm" className="shrink-0" onClick={() => void usb.pair()}>
+              Pair
+            </Button>
+          )}
         </div>
 
         <p className="mt-2 flex min-h-4 items-start gap-1.5 text-xs leading-4 text-muted-foreground [overflow-wrap:anywhere]">
