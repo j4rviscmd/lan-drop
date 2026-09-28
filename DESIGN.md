@@ -10,6 +10,7 @@ Windows ⇄ iPhone file transfer app built with Tauri 2.0.
 - 2026-09-28 (`usb-grid-view`): USB explorer UX overhaul, device-verified. Grid/list toggle (SVG type icons, no emoji); JPEG EXIF thumbnails via new `usb_thumbnail` command (128 KiB head read, hand-rolled IFD1 parser + base64, lazy IntersectionObserver); initial view = user-installed apps (`usb_apps` via installation_proxy Lookup User) with per-app browsing over house_arrest **VendDocuments** — VendContainer is refused with `InstallationLookupFailed` since iOS 8.3, and the vend session still roots at the app container with only `/Documents` readable (UI prefixes paths accordingly; non-file-sharing apps gray out after one failed attempt; the media partition moved behind a "Media partition" tile). Two-column window (default 1080×720): cards left, explorer owns the right, page never scrolls (left column and file list scroll internally). QR/URL card removed from the UI — the Wi-Fi server stays alive only for the desktop loopback progress EventSource.
 - 2026-09-28 (`react-migration`): frontend migrated from vanilla JS to **React 19 + TypeScript + Vite 6 + Tailwind v4 + ObsidianUI** (shadcn-style registry, neutral dark theme). Rust backend unchanged; `tauri.conf.json` build block now drives Vite (devUrl :5173, frontendDist ../dist), `withGlobalTauri` dropped in favor of `@tauri-apps/api`. All vanilla-JS behavior ported 1:1 (status strings, house_arrest error paths, view persistence, lazy EXIF thumbs via a cached in-view hook). UX additions: sonner toasts + transfer direction icons, empty/skeleton states, drag-and-drop push (webview drag-drop events → absolute paths → `usb_push`), explorer search filter, USB/Wi-Fi badge (`connection` from usbmuxd — Wi-Fi Sync devices appear as Network), and the previously dead `serve_root` row now populated. Review caught a critical missing `index.css` import (production build shipped zero CSS) — fixed.
 - 2026-09-28 (`startup-path`): explorer settings dialog (gear beside the view toggle, ObsidianUI): "Use current folder" registers the browsed (scope, cwd) as the launch default — persisted to localStorage `usb-start-path`, shape-validated on read; unset keeps the app grid. Launch navigation runs after pairing via a fallback chain (missing folder → its scope root → app grid) so a stale entry never dead-ends.
+- 2026-09-28 (`remove-serve-root`): PC→phone Wi-Fi serving removed — `/api/list`, `/api/download`, the "PC files" browser on the phone page, and the `serve_root` concept. The LAN HTTPS server is now upload-only (phone→PC into `Downloads\lan-drop`); PC→device transfer is USB push. Rationale: the owner's flow is device-side file operations, and the unauthenticated listener no longer exposes the whole Downloads folder to the LAN. `tokio-util` dependency dropped.
 - 2026-09-28 (`custom-upload-dir`): upload destination is user-configurable — folder-picker button on the Storage card, default still `Downloads\lan-drop`. New `settings.rs` persists the choice to `config.json` in the app data dir (missing/corrupt file → defaults, never blocks startup; configured-but-unusable path at launch, e.g. unplugged drive, falls back to the default while keeping the saved choice). `AppState.upload_dir` became a `parking_lot::RwLock` so the running server switches folders without restart via the `set_upload_dir` command (create+canonicalize → persist → swap; a failed save leaves state unchanged). USB pulls follow the same folder: the frontend re-fetches `server_info` after a change, which feeds both the Storage card display and the pull destination.
 
 ## Design pivot options (open decision)
@@ -47,7 +48,7 @@ What is reachable:
 
 Consequences:
 
-- Windows→iPhone: files are delivered as browser downloads or via the Web Share API (photos/videos can be saved directly to the Photos app). They land in the browser's Downloads folder / Photos / user-chosen target, not arbitrary paths.
+- Windows→iPhone: over USB (AFC push to the phone's media partition). The Wi-Fi server is upload-only; it no longer serves PC files.
 - iPhone→Windows: the user selects files in the browser's file picker (which can browse Files app, iCloud Drive, and Photos) and uploads them.
 
 ## Architecture (Model S)
@@ -55,17 +56,16 @@ Consequences:
 ```
 ┌─Windows─────────────┐         Wi-Fi/LAN          ┌─iPhone──────────┐
 │ Tauri 2.0 app       │ https://192.168.x.x:PORT  │ Any browser     │
-│ ├ WebView (UI)      │◄──────────────────────────►│ (opened via QR) │
-│ ├ axum HTTPS server │  Web UI + multipart upload │                 │
-│ │  (list/up/down)   │  downloads / Web Share     │                 │
+│ ├ WebView (UI)      │◄──────────────────────────│ (opened via QR) │
+│ ├ axum HTTPS server │  web UI + multipart upload│                 │
+│ │  (upload only)    │                            │                 │
 │ └ QR/URL/PIN display│                            │                 │
-└─────────────────────┘
+└─────────────────────┘                            └─────────────────┘
 ```
 
 - The Tauri app embeds an HTTPS server (axum + tokio, spawned in the setup hook) that:
-  - serves a small web UI (upload form, PC-side file list, download buttons)
+  - serves a small web UI (upload form)
   - receives multipart uploads (streamed straight to disk)
-  - serves file downloads for the iPhone side
   - serves `GET /ca.crt` for the one-time iPhone trust setup
 - TLS: `rcgen` generates a local CA (persisted in the app data dir) and a per-launch leaf certificate whose SAN covers the current LAN IP. A plain-HTTP loopback listener serves only the desktop webview (its store does not trust our CA).
 - The iPhone side is a thin client. Any iOS browser works: Safari, Chrome, Edge, Firefox — all iOS browsers are WebKit-based (except EU-region alternatives), so behavior is identical. Camera QR scan opens the default browser; Chrome can scan QR from its address bar or the URL can be typed manually.
@@ -78,8 +78,6 @@ The API is designed to be reused when an iPhone-native app (Model N) is added la
 - `GET /` — web UI
 - `GET /ca.crt` — local CA certificate (one-time iPhone trust setup)
 - `GET /api/health` — server info (alias, version, PIN required?)
-- `GET /api/list?path=...` — list served folder contents
-- `GET /api/download?path=...` — download a file
 - `POST /api/upload` — multipart streaming upload
 - `GET /api/events` (WebSocket or SSE) — transfer progress events
 

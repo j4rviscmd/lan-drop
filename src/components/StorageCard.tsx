@@ -49,10 +49,6 @@ export function StorageCard({
             </Button>
           </span>
         </div>
-        <div className="flex justify-between gap-3 text-[13px]">
-          <span className="text-muted-foreground">Folder served to the phone</span>
-          <code className="text-xs [overflow-wrap:anywhere] text-right">{info.serve_root}</code>
-        </div>
       </CardContent>
     </Card>
   );

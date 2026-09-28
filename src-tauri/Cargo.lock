@@ -2226,7 +2226,6 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
- "tokio-util",
  "tower",
  "tower-http",
  "uuid",
