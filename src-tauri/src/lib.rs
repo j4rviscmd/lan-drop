@@ -154,6 +154,10 @@ pub fn run() {
                     std::process::exit(1);
                 }
             });
+
+            // Device-set watcher: pushes usbmuxd changes to the webview as
+            // the "usb-devices" event (the frontend never polls usbmuxd).
+            tauri::async_runtime::spawn(usb::watch_devices(app.handle().clone()));
             println!("lan-drop CA setup on http://{ip}:{setup_port}");
 
             let url = format!("https://{ip}:{port}");

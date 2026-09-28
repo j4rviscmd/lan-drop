@@ -166,6 +166,21 @@ export function useUsbBrowser(
     [go, startPath],
   );
 
+  /** Publish a device set and select the first device (or clear when none) —
+   *  the shared tail of refresh() and the pushed-set handler. */
+  const adoptDevices = useCallback(async (devs: UsbDeviceEntry[]) => {
+    setDevices(devs);
+    if (devs.length === 0) {
+      // No "then Refresh" nudge: the backend watch picks devices up on its own.
+      setStatus("No iPhone found. Plug it in via USB (iTunes or the Apple Devices app must be installed).");
+      setUdid(null);
+      setPaired(false);
+      return;
+    }
+    setUdid(devs[0].udid);
+    await checkPaired(devs[0].udid);
+  }, [checkPaired]);
+
   const refresh = useCallback(async () => {
     setStatus("Looking for devices…");
     let devs: UsbDeviceEntry[];
@@ -175,18 +190,23 @@ export function useUsbBrowser(
       setStatus(String(e));
       return;
     }
-    setDevices(devs);
-    if (devs.length === 0) {
-      setStatus(
-        "No iPhone found. Plug it in via USB (iTunes or the Apple Devices app must be installed), then Refresh.",
-      );
-      setUdid(null);
-      setPaired(false);
-      return;
-    }
-    setUdid(devs[0].udid);
-    await checkPaired(devs[0].udid);
-  }, [checkPaired]);
+    await adoptDevices(devs);
+  }, [adoptDevices]);
+
+  /** React to a backend-pushed device set (usbmuxd watch). Keeps an intact
+   *  selection silent — no status churn, no navigation reset; the full
+   *  select+checkPaired flow runs only when a device appears with none
+   *  selected or the selection vanished. */
+  const applyDevices = useCallback(
+    async (devs: UsbDeviceEntry[]) => {
+      if (udid && devs.some((d) => d.udid === udid)) {
+        setDevices(devs);
+        return;
+      }
+      await adoptDevices(devs);
+    },
+    [udid, adoptDevices],
+  );
 
   const pair = useCallback(async () => {
     if (!udid) return;
@@ -359,6 +379,15 @@ export function useUsbBrowser(
     // Mount-only: the initial device scan.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Backend "usb-devices" pushes (3s usbmuxd watch in Rust — the frontend
+  // never polls). Cleanup also covers listen() resolving after unmount.
+  useEffect(() => {
+    const unlisten = api.onUsbDevices((devs) => void applyDevices(devs));
+    return () => {
+      void unlisten.then((f) => f());
+    };
+  }, [applyDevices]);
 
   return {
     devices,
