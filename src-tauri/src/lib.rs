@@ -159,7 +159,9 @@ pub fn run() {
             usb::usb_device_info,
             usb::usb_list,
             usb::usb_pull,
-            usb::usb_push
+            usb::usb_apps,
+            usb::usb_push,
+            usb::usb_thumbnail
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

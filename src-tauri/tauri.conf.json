@@ -11,7 +11,7 @@
     "windows": [
       {
         "title": "lan-drop",
-        "width": 460,
+        "width": 1080,
         "height": 720,
         "resizable": true
       }
