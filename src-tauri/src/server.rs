@@ -1,11 +1,10 @@
 //! In-process axum HTTP server: web UI for the phone, upload receive,
-//! served-folder list/download, and SSE transfer progress.
+//! and SSE transfer progress.
 
 use std::{convert::Infallible, path::PathBuf, sync::Arc, time::UNIX_EPOCH};
 
 use axum::{
-    body::Body,
-    extract::{Multipart, Query, State},
+    extract::{Multipart, State},
     http::{header, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -14,10 +13,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncWriteExt, sync::broadcast};
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
-use tokio_util::io::ReaderStream;
 
 /// Emit a progress event at most once per this many bytes received.
 pub const PROGRESS_CHUNK: u64 = 1024 * 1024;
@@ -32,8 +29,6 @@ pub struct TransferEvent {
 
 pub struct AppState {
     events: broadcast::Sender<TransferEvent>,
-    /// Canonicalized root visible to `GET /api/list` and `GET /api/download`.
-    pub serve_root: PathBuf,
     /// Canonicalized destination folder for uploads.
     pub upload_dir: PathBuf,
     /// CA certificate PEM served at `GET /ca.crt` for first-time iPhone setup.
@@ -42,14 +37,12 @@ pub struct AppState {
 
 pub fn new_state(
     events: broadcast::Sender<TransferEvent>,
-    serve_root: PathBuf,
     upload_dir: PathBuf,
     ca_cert_pem: Option<String>,
 ) -> std::io::Result<Arc<AppState>> {
     std::fs::create_dir_all(&upload_dir)?;
     Ok(Arc::new(AppState {
         events,
-        serve_root: serve_root.canonicalize()?,
         upload_dir: upload_dir.canonicalize()?,
         ca_cert_pem,
     }))
@@ -82,8 +75,6 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/", get(index))
         .route("/ca.crt", get(ca_cert))
         .route("/api/health", get(health))
-        .route("/api/list", get(list))
-        .route("/api/download", get(download))
         .route("/api/upload", post(upload))
         .route("/api/events", get(events))
         .layer(axum::middleware::from_fn(log_requests))
@@ -151,71 +142,6 @@ async fn health() -> Json<serde_json::Value> {
     }))
 }
 
-#[derive(Deserialize)]
-pub struct PathParams {
-    pub path: Option<String>,
-}
-
-#[derive(Serialize)]
-struct Entry {
-    name: String,
-    is_dir: bool,
-    size: u64,
-    modified: u64,
-}
-
-/// Resolve `rel` inside `root`, rejecting traversal and escapes.
-fn resolve_under(root: &std::path::Path, rel: &str) -> Result<PathBuf, (StatusCode, String)> {
-    let rel = rel.trim_start_matches(['/', '\\']);
-    if rel.is_empty() {
-        return Ok(root.to_path_buf());
-    }
-    if rel.split(['/', '\\']).any(|seg| seg == "..") {
-        return Err((StatusCode::FORBIDDEN, "path traversal rejected".into()));
-    }
-    match root.join(rel).canonicalize() {
-        Ok(canon) if canon.starts_with(root) => Ok(canon),
-        Ok(_) => Err((StatusCode::FORBIDDEN, "path escapes served root".into())),
-        Err(_) => Err((StatusCode::NOT_FOUND, "path not found".into())),
-    }
-}
-
-async fn list(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<PathParams>,
-) -> ApiResult<Json<Vec<Entry>>> {
-    let dir = resolve_under(&state.serve_root, params.path.as_deref().unwrap_or(""))?;
-    let mut rd = tokio::fs::read_dir(&dir)
-        .await
-        .map_err(|_| (StatusCode::NOT_FOUND, "cannot read directory".into()))?;
-    let mut out = Vec::new();
-    while let Some(e) = rd.next_entry().await.map_err(server_error)? {
-        // Dotfiles hidden: standard file-browser behavior, and it keeps the
-        // in-flight ".part" upload temporaries out of the phone's list.
-        if e.file_name().to_string_lossy().starts_with('.') {
-            continue;
-        }
-        let md = e.metadata().await.map_err(server_error)?;
-        let modified = md
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map_or(0, |d| d.as_secs());
-        out.push(Entry {
-            name: e.file_name().to_string_lossy().into_owned(),
-            is_dir: md.is_dir(),
-            size: md.len(),
-            modified,
-        });
-    }
-    out.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
-    Ok(Json(out))
-}
-
 fn server_error(e: std::io::Error) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }
@@ -226,48 +152,6 @@ pub fn display(path: &std::path::Path) -> String {
     path.to_string_lossy()
         .trim_start_matches(r#"\\?\"#)
         .to_owned()
-}
-
-async fn download(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<PathParams>,
-) -> ApiResult<Response> {
-    let path = resolve_under(&state.serve_root, params.path.as_deref().unwrap_or(""))?;
-    let md = tokio::fs::metadata(&path)
-        .await
-        .map_err(|_| (StatusCode::NOT_FOUND, "file not found".into()))?;
-    if !md.is_file() {
-        return Err((StatusCode::BAD_REQUEST, "not a file".into()));
-    }
-    let file = tokio::fs::File::open(&path).await.map_err(server_error)?;
-    let name = path
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "file".into());
-    let utf8: String = name.bytes().map(|b| format!("%{b:02X}")).collect();
-    let ascii: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii() && !c.is_control() {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let stream = ReaderStream::new(file);
-    Ok((
-        [
-            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{utf8}"),
-            ),
-            (header::CONTENT_LENGTH, md.len().to_string()),
-        ],
-        Body::from_stream(stream),
-    )
-        .into_response())
 }
 
 async fn upload(
@@ -442,16 +326,5 @@ mod tests {
         assert_eq!(sanitize_filename("trailing... "), "trailing");
         assert_eq!(sanitize_filename(""), "file");
         assert_eq!(sanitize_filename("dir/"), "file");
-    }
-
-    #[test]
-    fn resolve_rejects_traversal() {
-        let tmp = std::env::temp_dir().join(format!("lan-drop-resolve-{}", std::process::id()));
-        std::fs::create_dir_all(&tmp).unwrap();
-        let root = tmp.canonicalize().unwrap();
-        assert!(resolve_under(&root, "../x").is_err());
-        assert!(resolve_under(&root, "a/../../x").is_err());
-        assert_eq!(resolve_under(&root, "").unwrap(), root);
-        std::fs::remove_dir_all(&tmp).unwrap();
     }
 }

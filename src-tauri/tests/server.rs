@@ -1,5 +1,5 @@
 //! End-to-end HTTP behavior check against the real router (no Tauri):
-//! upload→disk, list, download, SSE event broadcast, traversal rejection.
+//! upload→disk, SSE event broadcast, health, CA route.
 
 use axum::{
     body::Body,
@@ -16,12 +16,11 @@ fn temp_root(tag: &str) -> std::path::PathBuf {
 }
 
 #[tokio::test]
-async fn upload_list_download_roundtrip() {
+async fn upload_roundtrip() {
     let root = temp_root("roundtrip");
     let (tx, _keep) = tokio::sync::broadcast::channel(16);
     let mut rx = tx.subscribe();
-    let app =
-        server::router(server::new_state(tx, root.clone(), root.join("lan-drop"), None).unwrap());
+    let app = server::router(server::new_state(tx, root.join("lan-drop"), None).unwrap());
 
     let body = "--X\r\n\
         Content-Disposition: form-data; name=\"file\"; filename=\"hello.txt\"\r\n\
@@ -54,55 +53,6 @@ async fn upload_list_download_roundtrip() {
     }
     assert!(saw_done, "upload-done event missing");
 
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::get("/api/list?path=lan-drop")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let text = String::from_utf8(
-        axum::body::to_bytes(resp.into_body(), usize::MAX)
-            .await
-            .unwrap()
-            .to_vec(),
-    )
-    .unwrap();
-    assert!(text.contains("hello.txt"), "list body: {text}");
-
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::get("/api/download?path=lan-drop/hello.txt")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    assert!(resp.headers().contains_key("content-disposition"));
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    assert_eq!(&bytes[..], b"hello lan-drop");
-
-    // traversal and escape are rejected
-    for bad in ["../secret.txt", "lan-drop/../../secret.txt"] {
-        let resp = app
-            .clone()
-            .oneshot(
-                Request::get(format!("/api/download?path={}", bad.replace('/', "%2F")))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::FORBIDDEN, "path={bad}");
-    }
-
     // health responds
     let resp = app
         .oneshot(Request::get("/api/health").body(Body::empty()).unwrap())
@@ -115,8 +65,7 @@ async fn upload_list_download_roundtrip() {
 async fn duplicate_upload_gets_suffixed_name() {
     let root = temp_root("dup");
     let (tx, _keep) = tokio::sync::broadcast::channel(4);
-    let app =
-        server::router(server::new_state(tx, root.clone(), root.join("lan-drop"), None).unwrap());
+    let app = server::router(server::new_state(tx, root.join("lan-drop"), None).unwrap());
 
     let body = "--X\r\n\
         Content-Disposition: form-data; name=\"file\"; filename=\"a.bin\"\r\n\r\n\
@@ -144,8 +93,7 @@ async fn upload_over_2mb_succeeds() {
     // axum's DefaultBodyLimit (2 MiB) used to abort large multipart bodies.
     let root = temp_root("big");
     let (tx, _keep) = tokio::sync::broadcast::channel(4);
-    let app =
-        server::router(server::new_state(tx, root.clone(), root.join("lan-drop"), None).unwrap());
+    let app = server::router(server::new_state(tx, root.join("lan-drop"), None).unwrap());
 
     let payload: Vec<u8> = (0..3 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
     let mut body =
@@ -174,8 +122,7 @@ async fn upload_over_2mb_succeeds() {
 async fn aborted_upload_leaves_no_partial_file() {
     let root = temp_root("abort");
     let (tx, _keep) = tokio::sync::broadcast::channel(4);
-    let app =
-        server::router(server::new_state(tx, root.clone(), root.join("lan-drop"), None).unwrap());
+    let app = server::router(server::new_state(tx, root.join("lan-drop"), None).unwrap());
 
     // multipart body cut off before the closing boundary
     let body = "--X\r\n\
@@ -209,13 +156,7 @@ async fn ca_cert_route_serves_pem_or_404() {
     let (tx, _keep) = tokio::sync::broadcast::channel(4);
     let pem = "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n";
     let app = server::router(
-        server::new_state(
-            tx,
-            root.clone(),
-            root.join("lan-drop"),
-            Some(pem.to_string()),
-        )
-        .unwrap(),
+        server::new_state(tx, root.join("lan-drop"), Some(pem.to_string())).unwrap(),
     );
     let resp = app
         .clone()
@@ -234,8 +175,7 @@ async fn ca_cert_route_serves_pem_or_404() {
     assert_eq!(&bytes[..], pem.as_bytes());
 
     let (tx2, _keep2) = tokio::sync::broadcast::channel(4);
-    let app2 =
-        server::router(server::new_state(tx2, root.clone(), root.join("lan-drop"), None).unwrap());
+    let app2 = server::router(server::new_state(tx2, root.join("lan-drop"), None).unwrap());
     let resp = app2
         .oneshot(Request::get("/ca.crt").body(Body::empty()).unwrap())
         .await

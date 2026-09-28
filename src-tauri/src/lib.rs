@@ -14,7 +14,6 @@ struct ServerInfo {
     /// Loopback plain-HTTP port for the desktop webview's EventSource.
     loopback_port: u16,
     qr_svg: String,
-    serve_root: String,
     upload_dir: String,
 }
 
@@ -55,9 +54,7 @@ pub fn run() {
             }
 
             let home = app.path().home_dir()?;
-            // TODO MVP+: configurable served folder (tauri-plugin-dialog)
-            let serve_root = home.join("Downloads");
-            let upload_dir = serve_root.join("lan-drop");
+            let upload_dir = home.join("Downloads").join("lan-drop");
 
             // Local CA: generated once, installed on the iPhone once, then
             // every leaf we serve is trusted without browser warnings.
@@ -70,14 +67,8 @@ pub fn run() {
 
             let (events, _keep) = tokio::sync::broadcast::channel(64);
             let usb_events = events.clone();
-            let state = server::new_state(
-                events,
-                serve_root.clone(),
-                upload_dir.clone(),
-                Some(ca.cert_pem.clone()),
-            )?;
+            let state = server::new_state(events, upload_dir.clone(), Some(ca.cert_pem.clone()))?;
             app.manage(usb_events);
-            let serve_root_disp = server::display(&state.serve_root);
             let upload_dir_disp = server::display(&state.upload_dir);
             let setup_state = state.clone();
             let router = server::router(state);
@@ -172,7 +163,6 @@ pub fn run() {
                 port,
                 loopback_port,
                 qr_svg,
-                serve_root: serve_root_disp,
                 upload_dir: upload_dir_disp,
             });
             Ok(())
