@@ -3,4 +3,4 @@
 # share = [".env", "node_modules"]
 
 [finish]
-# commands = ["npm install"]
+commands = ["npm install"]

@@ -1,25 +1,23 @@
-//! In-process axum HTTP server: web UI for the phone, upload receive,
-//! and SSE transfer progress.
+//! Loopback axum server: SSE transfer-progress events for the desktop
+//! webview. USB pull/push reports progress through `emit` on the same
+//! broadcast channel the SSE endpoint streams.
 
-use std::{convert::Infallible, path::PathBuf, sync::Arc, time::UNIX_EPOCH};
+use std::{convert::Infallible, path::PathBuf, sync::Arc};
 
 use axum::{
-    extract::{Multipart, State},
-    http::{header, HeaderMap, StatusCode},
+    extract::State,
     response::{
         sse::{Event, KeepAlive, Sse},
-        Html, IntoResponse, Response,
+        Response,
     },
-    routing::{get, post},
-    Json, Router,
+    routing::get,
+    Router,
 };
-use tokio::{io::AsyncWriteExt, sync::broadcast};
+use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 
 /// Emit a progress event at most once per this many bytes received.
 pub const PROGRESS_CHUNK: u64 = 1024 * 1024;
-
-pub type ApiResult<T> = Result<T, (StatusCode, String)>;
 
 #[derive(Clone)]
 pub struct TransferEvent {
@@ -29,24 +27,20 @@ pub struct TransferEvent {
 
 pub struct AppState {
     events: broadcast::Sender<TransferEvent>,
-    /// Canonicalized destination folder for uploads; swapped in place at
-    /// runtime by `set_upload_dir`. RwLock, not a plain field: reads happen
-    /// per upload while the routers keep the AppState alive forever.
+    /// Canonicalized destination folder for incoming files; swapped in place
+    /// at runtime by `set_upload_dir`. RwLock, not a plain field: the state
+    /// outlives every command and USB pull that reads it.
     pub upload_dir: parking_lot::RwLock<PathBuf>,
-    /// CA certificate PEM served at `GET /ca.crt` for first-time iPhone setup.
-    pub ca_cert_pem: Option<String>,
 }
 
 pub fn new_state(
     events: broadcast::Sender<TransferEvent>,
     upload_dir: PathBuf,
-    ca_cert_pem: Option<String>,
 ) -> std::io::Result<Arc<AppState>> {
     std::fs::create_dir_all(&upload_dir)?;
     Ok(Arc::new(AppState {
         events,
         upload_dir: parking_lot::RwLock::new(upload_dir.canonicalize()?),
-        ca_cert_pem,
     }))
 }
 
@@ -63,8 +57,7 @@ impl AppState {
 
 /// Bind `addr` on `start`, falling back to the next ports if busy. The
 /// returned listener stays bound (so the port is reserved until served) and
-/// is set non-blocking — both tokio's `from_std` and axum-server's
-/// `from_tcp` require it but neither sets it.
+/// is set non-blocking — tokio's `from_std` requires it but doesn't set it.
 pub fn bind_with_fallback(addr: &str, start: u16) -> std::io::Result<std::net::TcpListener> {
     let mut last_err = None;
     for port in start..start + 10 {
@@ -82,34 +75,13 @@ pub fn bind_with_fallback(addr: &str, start: u16) -> std::io::Result<std::net::T
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
-    // Permissive CORS: the Tauri webview (http://tauri.localhost) subscribes to
-    // /api/events cross-origin. No credentials, LAN-only personal app.
+    // Permissive CORS: the Tauri webview (http://tauri.localhost) subscribes
+    // to /api/events cross-origin. No credentials, local-only personal app.
     Router::new()
-        .route("/", get(index))
-        .route("/ca.crt", get(ca_cert))
-        .route("/api/health", get(health))
-        .route("/api/upload", post(upload))
         .route("/api/events", get(events))
         .layer(axum::middleware::from_fn(log_requests))
-        // Uploads stream straight to disk; the 2 MiB DefaultBodyLimit would
-        // abort every larger transfer. Disk space is the real limit here.
-        .layer(axum::extract::DefaultBodyLimit::max(usize::MAX))
         .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(state)
-}
-
-/// Plain-HTTP router for one-time iPhone setup: the phone cannot trust the
-/// HTTPS server until the CA is installed, and iOS may refuse the in-flow
-/// certificate exception. This serves only the CA and instructions.
-pub fn ca_setup_router(state: Arc<AppState>) -> Router {
-    Router::new()
-        .route("/", get(setup_page))
-        .route("/ca.crt", get(ca_cert))
-        .with_state(state)
-}
-
-async fn setup_page() -> Html<&'static str> {
-    Html(include_str!("web/setup.html"))
 }
 
 /// Request log for debugging from a console (`tauri dev`); invisible in the
@@ -122,148 +94,12 @@ async fn log_requests(req: axum::extract::Request, next: axum::middleware::Next)
     resp
 }
 
-async fn ca_cert(State(state): State<Arc<AppState>>) -> ApiResult<Response> {
-    let pem = state
-        .ca_cert_pem
-        .as_deref()
-        .ok_or((StatusCode::NOT_FOUND, "no CA configured".into()))?;
-    Ok((
-        [
-            (
-                header::CONTENT_TYPE,
-                "application/x-x509-ca-cert".to_string(),
-            ),
-            (
-                header::CONTENT_DISPOSITION,
-                "attachment; filename=\"lan-drop-ca.crt\"".to_string(),
-            ),
-        ],
-        pem.to_string(),
-    )
-        .into_response())
-}
-
-async fn index() -> Html<&'static str> {
-    Html(include_str!("web/index.html"))
-}
-
-async fn health() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "name": "lan-drop",
-        "version": env!("CARGO_PKG_VERSION"),
-        "pin_required": false,
-    }))
-}
-
-fn server_error(e: std::io::Error) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-}
-
 /// Canonical paths carry the Windows verbatim `\\?\` prefix; strip it for
 /// anything shown to users. Internal code must keep the canonical form.
 pub fn display(path: &std::path::Path) -> String {
     path.to_string_lossy()
         .trim_start_matches(r#"\\?\"#)
         .to_owned()
-}
-
-async fn upload(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    mut multipart: Multipart,
-) -> ApiResult<Json<serde_json::Value>> {
-    // Single file per request from the web UI; request Content-Length (multipart
-    // framing adds only a few hundred bytes) drives the progress bar.
-    let total: u64 = headers
-        .get(header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    let mut received_total: u64 = 0;
-    let mut last_emit: u64 = 0;
-
-    while let Some(mut field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("bad multipart body: {e}")))?
-    {
-        let name = sanitize_filename(field.file_name().unwrap_or("file"));
-        // Note: snapshot the folder once so dest and tmp stay in the same
-        // place even if set_upload_dir swaps it mid-request.
-        let upload_dir = state.upload_dir();
-        let dest = unique_path(&upload_dir, &name).await;
-        // Stream into a temp file and rename on completion, so an aborted
-        // upload never leaves a truncated file under its final name.
-        let tmp = upload_dir.join(format!(
-            ".{}.{}.part",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos()),
-        ));
-        match stream_field_to(
-            &mut field,
-            &tmp,
-            total,
-            &mut received_total,
-            &mut last_emit,
-            &state.events,
-            &name,
-        )
-        .await
-        {
-            Ok(file_bytes) => {
-                tokio::fs::rename(&tmp, &dest).await.map_err(server_error)?;
-                emit(
-                    &state.events,
-                    "upload-done",
-                    serde_json::json!({
-                        "file": name,
-                        "size": file_bytes,
-                        "path": display(&dest),
-                    }),
-                );
-            }
-            Err(e) => {
-                let _ = tokio::fs::remove_file(&tmp).await;
-                return Err(e);
-            }
-        }
-    }
-    Ok(Json(serde_json::json!({ "ok": true })))
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn stream_field_to(
-    field: &mut axum::extract::multipart::Field<'_>,
-    tmp: &std::path::Path,
-    total: u64,
-    received_total: &mut u64,
-    last_emit: &mut u64,
-    events: &broadcast::Sender<TransferEvent>,
-    name: &str,
-) -> ApiResult<u64> {
-    let mut file = tokio::fs::File::create(tmp).await.map_err(server_error)?;
-    let mut file_bytes: u64 = 0;
-    while let Some(chunk) = field
-        .chunk()
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("bad multipart body: {e}")))?
-    {
-        file.write_all(&chunk).await.map_err(server_error)?;
-        file_bytes += chunk.len() as u64;
-        *received_total += chunk.len() as u64;
-        if total > 0 && *received_total - *last_emit >= PROGRESS_CHUNK {
-            *last_emit = *received_total;
-            emit(
-                events,
-                "upload-progress",
-                serde_json::json!({ "file": name, "received": file_bytes, "total": total }),
-            );
-        }
-    }
-    file.flush().await.map_err(server_error)?;
-    Ok(file_bytes)
 }
 
 async fn events(
