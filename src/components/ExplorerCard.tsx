@@ -236,26 +236,33 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
             </div>
 
             <div className="mt-2 flex items-center gap-2">
-              {!usb.loading && usb.scope !== null && selectable.length > 0 ? (
-                <>
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    ref={(el) => {
-                      if (el) el.indeterminate = selectedCount > 0 && !allSelected;
-                    }}
-                    onChange={(e) =>
-                      usb.setSelected(
-                        e.target.checked ? new Set(selectable.map((f) => f.name)) : new Set(),
-                      )
-                    }
-                    aria-label="Select all"
-                    className="size-3.5 shrink-0 cursor-pointer accent-primary"
-                  />
-                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                    {selectedCount}/{selectable.length} selected
-                  </span>
-                </>
+              {usb.scope !== null ? (
+                // Fixed-width slot keeps the buttons/filter anchored regardless
+                // of counter digits or visibility. ponytail: min-w-32 covers up
+                // to "999/999 selected"; 4+ digit counts still widen slightly.
+                <div className="flex min-w-32 shrink-0 items-center gap-2">
+                  {!usb.loading && selectable.length > 0 ? (
+                    <>
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = selectedCount > 0 && !allSelected;
+                        }}
+                        onChange={(e) =>
+                          usb.setSelected(
+                            e.target.checked ? new Set(selectable.map((f) => f.name)) : new Set(),
+                          )
+                        }
+                        aria-label="Select all"
+                        className="size-3.5 shrink-0 cursor-pointer accent-primary"
+                      />
+                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                        {selectedCount}/{selectable.length} selected
+                      </span>
+                    </>
+                  ) : null}
+                </div>
               ) : null}
               <div
                 className={cn(
