@@ -32,6 +32,28 @@ pub fn run() {
     let _ = rustls::crypto::ring::default_provider().install_default();
     tauri::Builder::default()
         .setup(|app| {
+            // Debug-only registration of the MCP bridge (see the desktop
+            // target dep in Cargo.toml): lets AI tools drive and inspect the
+            // running app (webview automation, IPC capture, screenshots).
+            // This cfg is the real debug gate — release never registers the
+            // plugin, so no WS server ships. Requires withGlobalTauri in
+            // tauri.conf.json (the bridge's injected JS reads
+            // window.__TAURI__); that flag is global and ships in release
+            // too — accepted: __TAURI_INTERNALS__ exists in every Tauri
+            // page anyway and commands stay capability-gated.
+            // CAUTION: bind loopback only. The plugin's default 0.0.0.0 bind
+            // triggers a Windows Firewall prompt on every `tauri dev` launch
+            // (per-exe-path, so each worktree re-prompts). The MCP client
+            // connects from the same machine, so loopback is sufficient.
+            #[cfg(all(not(mobile), debug_assertions))]
+            {
+                app.handle()
+                    .plugin(tauri_plugin_mcp_bridge::init_with_config(
+                        tauri_plugin_mcp_bridge::Config::localhost_only(),
+                    ))
+                    .expect("Failed to register mcp-bridge plugin");
+            }
+
             let home = app.path().home_dir()?;
             // TODO MVP+: configurable served folder (tauri-plugin-dialog)
             let serve_root = home.join("Downloads");
@@ -132,6 +154,10 @@ pub fn run() {
                     std::process::exit(1);
                 }
             });
+
+            // Device-set watcher: pushes usbmuxd changes to the webview as
+            // the "usb-devices" event (the frontend never polls usbmuxd).
+            tauri::async_runtime::spawn(usb::watch_devices(app.handle().clone()));
             println!("lan-drop CA setup on http://{ip}:{setup_port}");
 
             let url = format!("https://{ip}:{port}");
