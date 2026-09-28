@@ -28,19 +28,6 @@
   .bar { height: 6px; background: #232733; border-radius: 3px; margin-top: 4px; overflow: hidden; }
   .bar > div { height: 100%; width: 0; background: #7aa2f7; border-radius: 3px; transition: width .15s; }
   .transfer.done .bar > div { background: #4aba8c; }
-  .crumbs { font-size: 13px; color: #9aa3b2; margin-bottom: 8px; word-break: break-all; }
-  .crumbs a { color: #7aa2f7; text-decoration: none; }
-  ul.entries { list-style: none; margin: 0; padding: 0; }
-  .entry {
-    display: flex; align-items: center; gap: 10px; padding: 11px 4px;
-    border-bottom: 1px solid #232733; font-size: 15px;
-  }
-  .entry:last-child { border-bottom: 0; }
-  .entry .icon { width: 22px; text-align: center; flex: none; }
-  .entry .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .entry .meta { color: #9aa3b2; font-size: 12px; flex: none; }
-  .entry.dir { cursor: pointer; }
-  a.dl { color: #7aa2f7; text-decoration: none; border: 1px solid #33406b; border-radius: 8px; padding: 6px 10px; font-size: 13px; flex: none; }
   #err { color: #e06c75; font-size: 13px; margin-top: 8px; display: none; }
   ol.steps { margin: 8px 0 0; padding-left: 18px; }
   ol.steps li { margin: 6px 0; line-height: 1.5; }
@@ -60,11 +47,6 @@
   <div id="transfers"></div>
 </div>
 
-<h2>PC files</h2>
-<div class="card">
-  <div class="crumbs" id="crumbs"></div>
-  <ul class="entries" id="entries"></ul>
-</div>
 <p id="err"></p>
 
 <h2>First time on this iPhone?</h2>
@@ -84,9 +66,6 @@
 <script>
 'use strict';
 const $ = (id) => document.getElementById(id);
-let cwd = [];
-
-function rel() { return cwd.join('/'); }
 
 function transferRow(file) {
   let row = document.querySelector('[data-file="' + CSS.escape(file) + '"]');
@@ -115,7 +94,6 @@ function onDone(e) {
   row.classList.add('done');
   row.querySelector('.bar > div').style.width = '100%';
   row.querySelector('.pct').textContent = fmtSize(d.size);
-  loadList();
 }
 
 // Secure context (our own CA) unlocks the Screen Wake Lock API: keep the
@@ -169,64 +147,6 @@ function showError(msg) {
   setTimeout(() => { el.style.display = 'none'; }, 5000);
 }
 
-function renderCrumbs() {
-  const el = $('crumbs');
-  el.innerHTML = '';
-  const root = document.createElement('a');
-  root.textContent = 'Downloads';
-  root.href = '#';
-  root.onclick = (ev) => { ev.preventDefault(); cwd = []; loadList(); };
-  el.appendChild(root);
-  cwd.forEach((seg, i) => {
-    el.append(' / ');
-    if (i + 1 < cwd.length) {
-      const a = document.createElement('a');
-      a.textContent = seg;
-      a.href = '#';
-      a.onclick = (ev) => { ev.preventDefault(); cwd = cwd.slice(0, i + 1); loadList(); };
-      el.appendChild(a);
-    } else {
-      el.append(seg);
-    }
-  });
-}
-
-async function loadList() {
-  renderCrumbs();
-  const path = rel();
-  try {
-    const res = await fetch('/api/list?path=' + encodeURIComponent(path));
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const entries = await res.json();
-    const dir = path ? path + '/' : '';
-    const ul = $('entries');
-    ul.innerHTML = '';
-    for (const en of entries) {
-      const li = document.createElement('li');
-      li.className = 'entry' + (en.is_dir ? ' dir' : '');
-      li.innerHTML = '<span class="icon"></span><span class="nm"></span>' +
-        (en.is_dir ? '<span class="meta">▸</span>'
-                   : '<span class="meta"></span><a class="dl" download>Get</a>');
-      li.querySelector('.nm').textContent = en.name;
-      if (en.is_dir) {
-        li.querySelector('.icon').textContent = '📁';
-        li.onclick = () => { cwd.push(en.name); loadList(); };
-      } else {
-        li.querySelector('.icon').textContent = '📄';
-        li.querySelector('.meta').textContent = fmtSize(en.size);
-        const a = li.querySelector('a.dl');
-        a.href = '/api/download?path=' + encodeURIComponent(dir + en.name);
-      }
-      ul.appendChild(li);
-    }
-    if (entries.length === 0) {
-      ul.innerHTML = '<li class="entry"><span class="meta" style="margin:auto">empty</span></li>';
-    }
-  } catch (err) {
-    showError('Cannot list files: ' + err.message);
-  }
-}
-
 $('pick').addEventListener('change', () => { upload($('pick').files); });
 
 const es = new EventSource('/api/events');
@@ -234,7 +154,6 @@ es.addEventListener('upload-progress', onProgress);
 es.addEventListener('upload-done', onDone);
 
 fetch('/api/health').catch(() => showError('Server unreachable'));
-loadList();
 </script>
 </body>
 </html>

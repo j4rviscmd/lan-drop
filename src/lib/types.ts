@@ -7,7 +7,6 @@ export interface ServerInfo {
   /** Loopback plain-HTTP port for the desktop webview's EventSource. */
   loopback_port: number;
   qr_svg: string;
-  serve_root: string;
   upload_dir: string;
 }
 
