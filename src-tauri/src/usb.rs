@@ -21,7 +21,7 @@ use idevice::{
     IdeviceService,
 };
 use serde::Serialize;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::server;
 
@@ -79,14 +79,18 @@ fn host_id(app: &tauri::AppHandle) -> Result<String, String> {
     Ok(id)
 }
 
-#[derive(Serialize)]
+// Why: PartialEq lets watch_devices diff consecutive polls and emit only on change.
+#[derive(Serialize, PartialEq)]
 pub struct UsbDeviceEntry {
     pub udid: String,
     pub connection: String,
 }
 
-#[tauri::command]
-pub async fn usb_devices() -> Result<Vec<UsbDeviceEntry>, String> {
+/// Event carrying the usbmuxd device set; emitted only when the set changes.
+pub const DEVICES_EVENT: &str = "usb-devices";
+
+/// The device set as usbmuxd sees it right now.
+async fn list_devices() -> Result<Vec<UsbDeviceEntry>, String> {
     let mut mux = mux().await?;
     let devs = mux.get_devices().await.map_err(es)?;
     Ok(devs
@@ -96,6 +100,37 @@ pub async fn usb_devices() -> Result<Vec<UsbDeviceEntry>, String> {
             connection: format!("{:?}", d.connection_type),
         })
         .collect())
+}
+
+#[tauri::command]
+pub async fn usb_devices() -> Result<Vec<UsbDeviceEntry>, String> {
+    list_devices().await
+}
+
+/// Watch usbmuxd and push the device set to the webview only when it
+/// changes — the datasource layer owns polling, the frontend only reacts.
+/// A failed poll keeps the last set: usbmuxd restarting must not read as
+/// "device unplugged".
+pub async fn watch_devices(app: tauri::AppHandle) {
+    // First tick fires immediately, so the current set is pushed at startup.
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
+    let mut last: Option<Vec<UsbDeviceEntry>> = None;
+    loop {
+        interval.tick().await;
+        let devs = match list_devices().await {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("lan-drop: device watch error: {e}");
+                continue;
+            }
+        };
+        if last.as_deref() != Some(devs.as_slice()) {
+            if let Err(e) = app.emit(DEVICES_EVENT, &devs) {
+                eprintln!("lan-drop: device event error: {e}");
+            }
+            last = Some(devs);
+        }
+    }
 }
 
 /// Pair with the device. The iPhone must be unlocked; the user taps "Trust"

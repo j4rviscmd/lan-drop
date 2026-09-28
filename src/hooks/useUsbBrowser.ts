@@ -79,6 +79,8 @@ export function useUsbBrowser(
   /** apps = the initial scope tile grid; entries = a browsed directory. */
   const [apps, setApps] = useState<UsbApp[] | null>(null);
   const [entries, setEntries] = useState<UsbEntry[] | null>(null);
+  /** Ticked file names in the current directory — folders can't be pulled. */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
 
   // Generation guard: fast navigation can outpace usb_list/usb_apps
   // responses; stale responses must not clobber the newer view.
@@ -88,6 +90,8 @@ export function useUsbBrowser(
     async (ud: string, s: Scope, cw: string[], fallback = false) => {
       const g = ++gen.current;
       setLoading(true);
+      // Any navigation invalidates the ticked set.
+      setSelected(new Set());
       setApps(null);
       setEntries(null);
       try {
@@ -162,6 +166,21 @@ export function useUsbBrowser(
     [go, startPath],
   );
 
+  /** Publish a device set and select the first device (or clear when none) —
+   *  the shared tail of refresh() and the pushed-set handler. */
+  const adoptDevices = useCallback(async (devs: UsbDeviceEntry[]) => {
+    setDevices(devs);
+    if (devs.length === 0) {
+      // No "then Refresh" nudge: the backend watch picks devices up on its own.
+      setStatus("No iPhone found. Plug it in via USB (iTunes or the Apple Devices app must be installed).");
+      setUdid(null);
+      setPaired(false);
+      return;
+    }
+    setUdid(devs[0].udid);
+    await checkPaired(devs[0].udid);
+  }, [checkPaired]);
+
   const refresh = useCallback(async () => {
     setStatus("Looking for devices…");
     let devs: UsbDeviceEntry[];
@@ -171,18 +190,23 @@ export function useUsbBrowser(
       setStatus(String(e));
       return;
     }
-    setDevices(devs);
-    if (devs.length === 0) {
-      setStatus(
-        "No iPhone found. Plug it in via USB (iTunes or the Apple Devices app must be installed), then Refresh.",
-      );
-      setUdid(null);
-      setPaired(false);
-      return;
-    }
-    setUdid(devs[0].udid);
-    await checkPaired(devs[0].udid);
-  }, [checkPaired]);
+    await adoptDevices(devs);
+  }, [adoptDevices]);
+
+  /** React to a backend-pushed device set (usbmuxd watch). Keeps an intact
+   *  selection silent — no status churn, no navigation reset; the full
+   *  select+checkPaired flow runs only when a device appears with none
+   *  selected or the selection vanished. */
+  const applyDevices = useCallback(
+    async (devs: UsbDeviceEntry[]) => {
+      if (udid && devs.some((d) => d.udid === udid)) {
+        setDevices(devs);
+        return;
+      }
+      await adoptDevices(devs);
+    },
+    [udid, adoptDevices],
+  );
 
   const pair = useCallback(async () => {
     if (!udid) return;
@@ -245,8 +269,8 @@ export function useUsbBrowser(
   );
 
   const pull = useCallback(
-    async (en: UsbEntry) => {
-      if (!udid) return;
+    async (en: UsbEntry): Promise<boolean> => {
+      if (!udid) return false;
       setStatus(`Pulling ${en.name}…`);
       track(en.name, "in");
       try {
@@ -258,9 +282,11 @@ export function useUsbBrowser(
         );
         setStatus(`Saved to ${dest}`);
         toast.success(`Saved to ${dest}`);
+        return true;
       } catch (e) {
         setStatus(`Pull failed: ${e}`);
         toast.error(`Pull failed: ${e}`);
+        return false;
       }
     },
     [udid, scope, uploadDir, fullPath, track],
@@ -268,16 +294,34 @@ export function useUsbBrowser(
 
   const openEntry = useCallback(
     (en: UsbEntry) => {
-      if (en.is_dir) {
-        const cw = [...cwd, en.name];
-        setCwd(cw);
-        if (udid) void browse(udid, scope, cw);
-      } else {
-        void pull(en);
-      }
+      if (en.is_dir) navigate(scope, [...cwd, en.name]);
     },
-    [udid, cwd, scope, browse, pull],
+    [scope, cwd, navigate],
   );
+
+  /** Tick/untick one file for a bulk pull (checkbox UI). */
+  const toggleSelect = useCallback((en: UsbEntry) => {
+    if (en.is_dir) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(en.name)) next.delete(en.name);
+      else next.add(en.name);
+      return next;
+    });
+  }, []);
+
+  /** Pull every ticked file sequentially — one AFC session at a time. */
+  const pullSelected = useCallback(async () => {
+    if (!udid || !entries) return;
+    const list = entries.filter((e) => !e.is_dir && selected.has(e.name));
+    if (list.length === 0) return;
+    let ok = 0;
+    for (const en of list) {
+      if (await pull(en)) ok++;
+    }
+    setSelected(new Set());
+    setStatus(`Pulled ${ok}/${list.length} to ${uploadDir}.`);
+  }, [udid, entries, selected, pull, uploadDir]);
 
   const pushPath = useCallback(
     async (src: string) => {
@@ -336,6 +380,15 @@ export function useUsbBrowser(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Backend "usb-devices" pushes (3s usbmuxd watch in Rust — the frontend
+  // never polls). Cleanup also covers listen() resolving after unmount.
+  useEffect(() => {
+    const unlisten = api.onUsbDevices((devs) => void applyDevices(devs));
+    return () => {
+      void unlisten.then((f) => f());
+    };
+  }, [applyDevices]);
+
   return {
     devices,
     udid,
@@ -350,6 +403,10 @@ export function useUsbBrowser(
     loading,
     apps,
     entries,
+    selected,
+    setSelected,
+    toggleSelect,
+    pullSelected,
     refresh,
     pair,
     selectDevice,

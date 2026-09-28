@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 
 import type { ServerInfo, UsbApp, UsbDeviceEntry, UsbDeviceInfo, UsbEntry } from "./types";
@@ -10,6 +11,9 @@ export const api = {
   serverInfo: () => invoke<ServerInfo>("server_info"),
 
   usbDevices: () => invoke<UsbDeviceEntry[]>("usb_devices"),
+  /** Backend pushes the usbmuxd device set whenever it changes (watch_devices). */
+  onUsbDevices: (cb: (devs: UsbDeviceEntry[]) => void): Promise<() => void> =>
+    listen<UsbDeviceEntry[]>("usb-devices", (e) => cb(e.payload)),
   usbDeviceInfo: (udid: string) =>
     invoke<UsbDeviceInfo>("usb_device_info", { udid }),
   usbPair: (udid: string) => invoke<void>("usb_pair", { udid }),
