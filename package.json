@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "lint": "biome lint --error-on-warnings .",
+    "format": "biome format --write .",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@radix-ui/react-context-menu": "^2.3.7",
@@ -31,6 +34,7 @@
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
     "@tailwindcss/vite": "^4.1.0",
     "@tauri-apps/cli": "^2",
     "@types/node": "^26.6.3",

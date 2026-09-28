@@ -1,9 +1,8 @@
-import { memo } from "react";
-import { ChevronRight } from "lucide-react";
-
 import { fileKind, fmtSize } from "@lib/format";
 import type { UsbEntry } from "@lib/types";
 import { cn } from "@lib/utils";
+import { ChevronRight } from "lucide-react";
+import { memo } from "react";
 
 import { EntryMenu } from "./EntryMenu";
 import { Thumb } from "./Thumb";

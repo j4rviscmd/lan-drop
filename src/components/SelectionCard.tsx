@@ -1,21 +1,20 @@
-import { File, Folder, ListX, MoreHorizontal, Trash2, X } from "lucide-react";
-
 import { pathOf } from "@hooks/useUsbBrowser";
 import { fmtSize } from "@lib/format";
 import type { SelectedEntry } from "@lib/types";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@ui/card";
 import { Button } from "@ui/button";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@ui/dropdown-menu";
+import { File, Folder, ListX, MoreHorizontal, Trash2, X } from "lucide-react";
 
 /** Where a ticked item lives — "AppName/DCIM/100APPLE" style hint. */
 function locOf(it: SelectedEntry): string {
   const root = it.scope.type === "app" ? it.scope.name : "Media";
-  return root + (it.cwd.length ? "/" + it.cwd.join("/") : "");
+  return root + (it.cwd.length ? `/${it.cwd.join("/")}` : "");
 }
 
 interface SelectionCardProps {

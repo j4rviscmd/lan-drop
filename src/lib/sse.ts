@@ -23,8 +23,6 @@ export function subscribeUploads(
   es.addEventListener("upload-progress", (ev) =>
     on.progress(JSON.parse((ev as MessageEvent).data)),
   );
-  es.addEventListener("upload-done", (ev) =>
-    on.done(JSON.parse((ev as MessageEvent).data)),
-  );
+  es.addEventListener("upload-done", (ev) => on.done(JSON.parse((ev as MessageEvent).data)));
   return () => es.close();
 }

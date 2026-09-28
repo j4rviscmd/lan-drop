@@ -1,0 +1,55 @@
+name: CI
+
+# Disabled until the repository goes public (private-repo Actions minutes are
+# limited). To enable, uncomment the push/pull_request triggers below.
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+  # pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Lint (biome, strict)
+        run: npm run lint
+
+      # Also produces dist/, which tauri::generate_context! embeds at compile
+      # time — must run before any cargo step.
+      - name: Typecheck and build frontend
+        run: npm run build
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: src-tauri
+
+      - name: Test
+        run: cargo test --locked
+        working-directory: src-tauri

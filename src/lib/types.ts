@@ -30,10 +30,7 @@ export interface UsbApp {
 }
 
 /** null = app grid (initial view); media = media partition; app = app Documents. */
-export type Scope =
-  | null
-  | { type: "media" }
-  | { type: "app"; id: string; name: string };
+export type Scope = null | { type: "media" } | { type: "app"; id: string; name: string };
 
 /** Saved USB-explorer launch location; null = "unset" (launch on the app grid). */
 export interface StartPath {

@@ -1,11 +1,10 @@
-import { ArrowDownToLine, ArrowUpFromLine, Inbox } from "lucide-react";
-
 import { useTransfers } from "@hooks/useTransfers";
 import { fmtSize } from "@lib/format";
 import { cn } from "@lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@ui/card";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@ui/empty";
 import { Progress } from "@ui/progress";
+import { ArrowDownToLine, ArrowUpFromLine, Inbox } from "lucide-react";
 
 export function TransfersCard() {
   const { transfers } = useTransfers();
@@ -38,7 +37,10 @@ export function TransfersCard() {
                 <div key={t.file}>
                   <div className="flex items-center justify-between gap-2 text-[13px]">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <Icon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                      <Icon
+                        aria-hidden="true"
+                        className="size-3.5 shrink-0 text-muted-foreground"
+                      />
                       <span className="truncate" title={t.file}>
                         {t.file}
                       </span>
