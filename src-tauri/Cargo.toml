@@ -29,6 +29,19 @@ time = { version = "0.3.55", features = ["formatting", "local-offset"] }
 idevice = { version = "0.1.68", features = ["usbmuxd", "afc", "pair", "house_arrest", "installation_proxy"] }
 tauri-plugin-dialog = "2.8.0"
 uuid = { version = "1.26.1", features = ["v4"] }
+# Debug-only tooling, but the gate lives in lib.rs (#[cfg(debug_assertions)]
+# around the plugin registration): cargo does not support debug_assertions
+# for dependency selection (it warns and currently compiles this into release
+# anyway, which also keeps the "mcp-bridge:default" capability resolvable in
+# release builds). Release binaries never start the WS server; LTO strips the
+# dead code. Vendored at vendor/tauri-plugin-mcp-bridge (upstream 0.13.0):
+# upstream pins webview2-com 0.38/windows 0.61, which duplicates against
+# tauri 2.12's webview2-com 0.39/windows-core 0.62 and fails to compile
+# (IStream Param trait-bound mismatch in the screenshot module). Local copy
+# bumps the Windows deps to match tauri. TODO: return to the registry dep
+# once upstream releases a webview2-com 0.39-compatible version.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-mcp-bridge = { path = "vendor/tauri-plugin-mcp-bridge" }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
