@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { confirm } from "@tauri-apps/plugin-dialog";
-import { toast } from "sonner";
-
 import { api } from "@lib/api";
-import type { Scope, StartPath, TransferDirection, UsbApp, UsbDeviceEntry, UsbEntry } from "@lib/types";
+import type {
+  Scope,
+  StartPath,
+  TransferDirection,
+  UsbApp,
+  UsbDeviceEntry,
+  UsbEntry,
+} from "@lib/types";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 export type UsbView = "grid" | "list";
 
@@ -49,9 +55,9 @@ function readStartPath(): StartPath | null {
 // the Documents subtree — so app-scope paths live under /Documents.
 function rel(s: Scope, cw: string[]): string {
   if (s?.type === "app") {
-    return "/Documents" + (cw.length ? "/" + cw.join("/") : "");
+    return `/Documents${cw.length ? `/${cw.join("/")}` : ""}`;
   }
-  return "/" + cw.join("/");
+  return `/${cw.join("/")}`;
 }
 
 /**
@@ -91,59 +97,56 @@ export function useUsbBrowser(
   // must not be yanked back to it).
   const locRef = useRef<{ s: Scope; cw: string[] } | null>(null);
 
-  const browse = useCallback(
-    async (ud: string, s: Scope, cw: string[], fallback = false) => {
-      const g = ++gen.current;
-      locRef.current = { s, cw };
-      setLoading(true);
-      // Any navigation invalidates the ticked set.
-      setSelected(new Set());
-      setApps(null);
-      setEntries(null);
-      try {
-        if (!s) {
-          const list = await api.usbApps(ud);
-          if (g !== gen.current) return;
-          setApps(list);
-          return;
-        }
-        const list = await api.usbList(ud, rel(s, cw), s.type === "app" ? s.id : null);
+  const browse = useCallback(async (ud: string, s: Scope, cw: string[], fallback = false) => {
+    const g = ++gen.current;
+    locRef.current = { s, cw };
+    setLoading(true);
+    // Any navigation invalidates the ticked set.
+    setSelected(new Set());
+    setApps(null);
+    setEntries(null);
+    try {
+      if (!s) {
+        const list = await api.usbApps(ud);
         if (g !== gen.current) return;
-        setEntries(list);
-      } catch (e) {
-        if (g !== gen.current) return;
-        // Fresh installs may not have a Documents folder yet.
-        if (s?.type === "app" && cw.length === 0 && /not found|no such/i.test(String(e))) {
-          setEntries([]);
-          setStatus(`${s.name} has no shared Documents yet.`);
-          return;
-        }
-        // iOS reports non-file-sharing apps to house_arrest as InstallationLookupFailed.
-        if (s?.type === "app" && String(e).includes("InstallationLookupFailed")) {
-          setNoAccess((prev) => new Set(prev).add(s.id));
-          setScope(null);
-          setCwd([]);
-          setStatus(`${s.name} doesn't allow file access — iOS only exposes file-sharing apps.`);
-          await browse(ud, null, []);
-          return;
-        }
-        // Saved startup folder is stale (folder/app gone): land on its
-        // scope root, or the app grid when the scope root itself failed.
-        if (fallback && s) {
-          setStatus("Saved startup folder is unavailable.");
-          const next = cw.length > 0 ? s : null;
-          setScope(next);
-          setCwd([]);
-          await browse(ud, next, []);
-          return;
-        }
-        setStatus(`Cannot browse: ${e}`);
-      } finally {
-        if (g === gen.current) setLoading(false);
+        setApps(list);
+        return;
       }
-    },
-    [],
-  );
+      const list = await api.usbList(ud, rel(s, cw), s.type === "app" ? s.id : null);
+      if (g !== gen.current) return;
+      setEntries(list);
+    } catch (e) {
+      if (g !== gen.current) return;
+      // Fresh installs may not have a Documents folder yet.
+      if (s?.type === "app" && cw.length === 0 && /not found|no such/i.test(String(e))) {
+        setEntries([]);
+        setStatus(`${s.name} has no shared Documents yet.`);
+        return;
+      }
+      // iOS reports non-file-sharing apps to house_arrest as InstallationLookupFailed.
+      if (s?.type === "app" && String(e).includes("InstallationLookupFailed")) {
+        setNoAccess((prev) => new Set(prev).add(s.id));
+        setScope(null);
+        setCwd([]);
+        setStatus(`${s.name} doesn't allow file access — iOS only exposes file-sharing apps.`);
+        await browse(ud, null, []);
+        return;
+      }
+      // Saved startup folder is stale (folder/app gone): land on its
+      // scope root, or the app grid when the scope root itself failed.
+      if (fallback && s) {
+        setStatus("Saved startup folder is unavailable.");
+        const next = cw.length > 0 ? s : null;
+        setScope(next);
+        setCwd([]);
+        await browse(ud, next, []);
+        return;
+      }
+      setStatus(`Cannot browse: ${e}`);
+    } finally {
+      if (g === gen.current) setLoading(false);
+    }
+  }, []);
 
   /** Every navigation funnels through here: set scope + cwd, then browse. */
   const go = useCallback(
@@ -174,18 +177,23 @@ export function useUsbBrowser(
 
   /** Publish a device set and select the first device (or clear when none) —
    *  the shared tail of refresh() and the pushed-set handler. */
-  const adoptDevices = useCallback(async (devs: UsbDeviceEntry[]) => {
-    setDevices(devs);
-    if (devs.length === 0) {
-      // No "then Refresh" nudge: the backend watch picks devices up on its own.
-      setStatus("No iPhone found. Plug it in via USB (iTunes or the Apple Devices app must be installed).");
-      setUdid(null);
-      setPaired(false);
-      return;
-    }
-    setUdid(devs[0].udid);
-    await checkPaired(devs[0].udid);
-  }, [checkPaired]);
+  const adoptDevices = useCallback(
+    async (devs: UsbDeviceEntry[]) => {
+      setDevices(devs);
+      if (devs.length === 0) {
+        // No "then Refresh" nudge: the backend watch picks devices up on its own.
+        setStatus(
+          "No iPhone found. Plug it in via USB (iTunes or the Apple Devices app must be installed).",
+        );
+        setUdid(null);
+        setPaired(false);
+        return;
+      }
+      setUdid(devs[0].udid);
+      await checkPaired(devs[0].udid);
+    },
+    [checkPaired],
+  );
 
   const refresh = useCallback(async () => {
     setStatus("Looking for devices…");
@@ -269,7 +277,7 @@ export function useUsbBrowser(
   const fullPath = useCallback(
     (name: string) => {
       const r = rel(scope, cwd);
-      return (r === "/" ? "" : r) + "/" + name;
+      return `${r === "/" ? "" : r}/${name}`;
     },
     [scope, cwd],
   );
@@ -358,12 +366,7 @@ export function useUsbBrowser(
       track(src.split(/[\\/]/).pop() ?? src, "out");
       try {
         const inApp = scope?.type === "app";
-        await api.usbPush(
-          udid,
-          src,
-          inApp ? "/Documents" : "/lan-drop",
-          inApp ? scope.id : null,
-        );
+        await api.usbPush(udid, src, inApp ? "/Documents" : "/lan-drop", inApp ? scope.id : null);
         const msg = inApp
           ? `Sent into ${scope.name} (Documents).`
           : 'Sent to the phone (media partition, folder "lan-drop").';
@@ -410,10 +413,10 @@ export function useUsbBrowser(
     setStartPath(null);
   }, []);
 
+  // Mount-only: the initial device scan.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only initial scan; refresh identity intentionally excluded.
   useEffect(() => {
     void refresh();
-    // Mount-only: the initial device scan.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Backend "usb-devices" pushes (3s usbmuxd watch in Rust — the frontend

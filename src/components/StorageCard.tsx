@@ -1,10 +1,9 @@
-import { FolderOpen } from "lucide-react";
-import { toast } from "sonner";
-
 import { api } from "@lib/api";
 import type { ServerInfo } from "@lib/types";
 import { Button } from "@ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@ui/card";
+import { FolderOpen } from "lucide-react";
+import { toast } from "sonner";
 
 export function StorageCard({
   info,

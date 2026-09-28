@@ -1,6 +1,6 @@
+import { Shell } from "@components/Shell";
 import { useServerInfo } from "@hooks/useServerInfo";
 import { TransfersProvider } from "@hooks/useTransfers";
-import { Shell } from "@components/Shell";
 import { Toaster } from "@ui/sonner";
 
 export default function App() {

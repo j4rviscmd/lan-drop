@@ -1,7 +1,11 @@
-import { toast } from "sonner";
-
 import type { UsbEntry } from "@lib/types";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@ui/context-menu";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@ui/context-menu";
+import { toast } from "sonner";
 
 interface EntryMenuProps {
   entry: UsbEntry;

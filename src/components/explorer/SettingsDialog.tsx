@@ -1,5 +1,3 @@
-import { Settings2 } from "lucide-react";
-
 import type { StartPath } from "@lib/types";
 import { Button } from "@ui/button";
 import {
@@ -11,6 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@ui/dialog";
+import { Settings2 } from "lucide-react";
 
 /** Human-readable form of a saved launch location ("VLC · Documents / Movies"). */
 // Note: app scopes always display under "Documents" — VendDocuments roots the

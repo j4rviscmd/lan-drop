@@ -1,10 +1,9 @@
-import { AppWindow, FileText, Film, Folder, HardDrive, Image, Music } from "lucide-react";
-import { useEffect, useState } from "react";
-
 import { useInView } from "@hooks/useInView";
 import { api } from "@lib/api";
 import type { FileKind } from "@lib/format";
 import { cn } from "@lib/utils";
+import { AppWindow, FileText, Film, Folder, HardDrive, Image, Music } from "lucide-react";
+import { useEffect, useState } from "react";
 
 const ICONS: Record<FileKind, typeof Folder> = {
   dir: Folder,

@@ -1,8 +1,7 @@
-import { LayoutGrid, List } from "lucide-react";
+import type { UsbView } from "@hooks/useUsbBrowser";
 
 import { ToggleGroup, ToggleGroupItem } from "@ui/toggle-group";
-
-import type { UsbView } from "@hooks/useUsbBrowser";
+import { LayoutGrid, List } from "lucide-react";
 
 /** Grid/list toggle; the value persists to localStorage via the hook. */
 export function ViewToggle({ view, onChange }: { view: UsbView; onChange: (v: UsbView) => void }) {
