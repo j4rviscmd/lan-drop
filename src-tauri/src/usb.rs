@@ -407,33 +407,20 @@ pub async fn usb_delete(udid: String, path: String, app: Option<String>) -> Resu
     Ok(())
 }
 
-/// Copy a PC file onto the device under `afc_dir`.
-#[tauri::command]
-pub async fn usb_push(
-    events: tauri::State<'_, tokio::sync::broadcast::Sender<server::TransferEvent>>,
-    udid: String,
-    src: String,
-    afc_dir: String,
-    app: Option<String>,
+/// Stream one local file to the device at `target`, emitting per-file
+/// progress events.
+async fn push_file(
+    afc: &mut AfcClient,
+    events: &tokio::sync::broadcast::Sender<server::TransferEvent>,
+    src: &std::path::Path,
+    name: &str,
+    target: &str,
+    total: u64,
 ) -> Result<(), String> {
     use tokio::io::AsyncReadExt;
 
-    let meta = tokio::fs::metadata(&src).await.map_err(es)?;
-    let total = meta.len();
-    let name = server::sanitize_filename(
-        std::path::Path::new(&src)
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .as_deref()
-            .unwrap_or("file"),
-    );
-
-    let mut afc = afc_client_for(&udid, app.as_deref()).await?;
-    let _ = afc.mk_dir(&afc_dir).await; // exists is fine
-    let target = format!("{}/{}", afc_dir.trim_end_matches('/'), name);
-    let mut fd = afc.open(&target, AfcFopenMode::WrOnly).await.map_err(es)?;
-
-    let mut file = tokio::fs::File::open(&src).await.map_err(es)?;
+    let mut fd = afc.open(target, AfcFopenMode::WrOnly).await.map_err(es)?;
+    let mut file = tokio::fs::File::open(src).await.map_err(es)?;
     let mut buf = vec![0u8; CHUNK];
     let mut sent: u64 = 0;
     let mut last_emit: u64 = 0;
@@ -447,7 +434,7 @@ pub async fn usb_push(
         if sent - last_emit >= server::PROGRESS_CHUNK {
             last_emit = sent;
             server::emit(
-                events.inner(),
+                events,
                 "upload-progress",
                 serde_json::json!({ "file": name, "received": sent, "total": total }),
             );
@@ -455,7 +442,7 @@ pub async fn usb_push(
     }
     fd.close().await.map_err(es)?;
     server::emit(
-        events.inner(),
+        events,
         "upload-done",
         serde_json::json!({
             "file": name,
@@ -466,6 +453,73 @@ pub async fn usb_push(
             "local": true,
         }),
     );
+    Ok(())
+}
+
+/// Recursively copy a local directory onto the device under `afc_path`.
+/// Each file reports its own progress under "dir/file" relative names.
+async fn push_dir(
+    afc: &mut AfcClient,
+    events: &tokio::sync::broadcast::Sender<server::TransferEvent>,
+    src: &std::path::Path,
+    afc_path: &str,
+    rel: &str,
+) -> Result<(), String> {
+    let _ = afc.mk_dir(afc_path).await; // exists is fine
+    let mut rd = tokio::fs::read_dir(src).await.map_err(es)?;
+    while let Some(entry) = rd.next_entry().await.map_err(es)? {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // Distinct local names can sanitize to the same device name
+        // (a:b vs a?b → a_b); the second copy overwrites the first.
+        let child_afc = format!(
+            "{}/{}",
+            afc_path.trim_end_matches('/'),
+            server::sanitize_filename(&name)
+        );
+        let child_rel = format!("{}/{}", rel, name);
+        let child_src = entry.path();
+        if entry.file_type().await.map_err(es)?.is_dir() {
+            // Why boxed: push_dir recursing by value would need a future of
+            // unbounded size; pinning breaks the cycle.
+            Box::pin(push_dir(afc, events, &child_src, &child_afc, &child_rel)).await?;
+        } else {
+            let total = entry.metadata().await.map_err(es)?.len();
+            push_file(afc, events, &child_src, &child_rel, &child_afc, total).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Copy a PC file — or a whole directory tree — onto the device under
+/// `afc_dir` (a dropped folder arrives here as a directory path, which
+/// previously opened as an empty file).
+#[tauri::command]
+pub async fn usb_push(
+    events: tauri::State<'_, tokio::sync::broadcast::Sender<server::TransferEvent>>,
+    udid: String,
+    src: String,
+    afc_dir: String,
+    app: Option<String>,
+) -> Result<(), String> {
+    let meta = tokio::fs::metadata(&src).await.map_err(es)?;
+    let name = server::sanitize_filename(
+        std::path::Path::new(&src)
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .as_deref()
+            .unwrap_or("file"),
+    );
+
+    let mut afc = afc_client_for(&udid, app.as_deref()).await?;
+    let _ = afc.mk_dir(&afc_dir).await; // exists is fine
+    let target = format!("{}/{}", afc_dir.trim_end_matches('/'), name);
+    let src_path = std::path::Path::new(&src);
+    let events = events.inner();
+    if meta.is_dir() {
+        push_dir(&mut afc, events, src_path, &target, &name).await?;
+    } else {
+        push_file(&mut afc, events, src_path, &name, &target, meta.len()).await?;
+    }
     Ok(())
 }
 
