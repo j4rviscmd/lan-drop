@@ -15,7 +15,8 @@
         "title": "lan-drop",
         "width": 1080,
         "height": 720,
-        "resizable": true
+        "resizable": true,
+        "maximized": true
       }
     ],
     "security": {
