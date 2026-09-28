@@ -50,6 +50,12 @@ export function ExplorerCard({ uploadDir }: { uploadDir: string }) {
     };
   }, [pushPath]);
 
+  // Why: every navigation updates scope or cwd in useUsbBrowser, so a query
+  // typed for one folder never leaks into the next view.
+  useEffect(() => {
+    setQuery("");
+  }, [usb.scope, usb.cwd]);
+
   const device = usb.devices.find((d) => d.udid === usb.udid);
   // usbmuxd reports "Network" for Wi-Fi Sync devices, "Usb" otherwise.
   const isNetwork = device?.connection.toLowerCase().includes("network") ?? false;
