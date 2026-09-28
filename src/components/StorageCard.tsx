@@ -25,7 +25,8 @@ export function StorageCard({
   };
 
   return (
-    <Card>
+    // Why: natural height at >=860px — the stretching cards below own the leftover space.
+    <Card className="min-[860px]:shrink-0">
       <CardHeader>
         <CardTitle className="text-[13px] tracking-[0.06em] text-muted-foreground uppercase">
           Storage

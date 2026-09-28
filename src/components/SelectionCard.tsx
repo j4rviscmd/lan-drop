@@ -29,7 +29,8 @@ interface SelectionCardProps {
  *  Rendered only while something is ticked. */
 export function SelectionCard({ selection, onRemove, onClear, onDelete }: SelectionCardProps) {
   return (
-    <Card>
+    // Why: at >=860px, Selected and Transfers split the left rail below Storage 1:1; the list scrolls internally.
+    <Card className="min-[860px]:min-h-0 min-[860px]:flex-1">
       <CardHeader>
         <CardTitle className="text-[13px] tracking-[0.06em] text-muted-foreground uppercase">
           Selected <span className="tabular-nums">· {selection.size}</span>
@@ -59,8 +60,8 @@ export function SelectionCard({ selection, onRemove, onClear, onDelete }: Select
           </DropdownMenu>
         </CardAction>
       </CardHeader>
-      <CardContent className="flex flex-col gap-1">
-        <div className="flex max-h-44 flex-col gap-1 overflow-y-auto">
+      <CardContent className="flex flex-col gap-1 min-[860px]:min-h-0 min-[860px]:flex-1">
+        <div className="flex max-h-44 flex-col gap-1 overflow-y-auto min-[860px]:max-h-none min-[860px]:flex-1">
           {[...selection].map(([key, it]) => (
             <div key={key} className="flex items-center gap-2 text-[13px]">
               {it.is_dir ? (
