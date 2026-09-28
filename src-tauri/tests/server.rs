@@ -1,217 +1,56 @@
-//! End-to-end HTTP behavior check against the real router (no Tauri):
-//! upload→disk, SSE event broadcast, health, CA route.
+//! SSE event broadcast through the real router (no Tauri), plus the
+//! pull-destination naming helper.
 
-use axum::{
-    body::Body,
-    http::{Request, StatusCode},
-};
+use axum::{body::Body, http::Request};
 use lan_drop_lib::server;
+use tokio_stream::StreamExt as _;
 use tower::ServiceExt;
 
 fn temp_root(tag: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("lan-drop-it-{}-{tag}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lan-drop-it-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
 }
 
 #[tokio::test]
-async fn upload_roundtrip() {
-    let root = temp_root("roundtrip");
-    let (tx, _keep) = tokio::sync::broadcast::channel(16);
-    let mut rx = tx.subscribe();
-    let app = server::router(server::new_state(tx, root.join("lan-drop"), None).unwrap());
+async fn events_stream_carries_emitted_transfers() {
+    let root = temp_root("sse");
+    let (tx, _keep) = tokio::sync::broadcast::channel(4);
+    let app = server::router(server::new_state(tx.clone(), root.join("lan-drop")).unwrap());
 
-    let body = "--X\r\n\
-        Content-Disposition: form-data; name=\"file\"; filename=\"hello.txt\"\r\n\
-        Content-Type: text/plain\r\n\r\n\
-        hello lan-drop\r\n\
-        --X--\r\n";
     let resp = app
-        .clone()
-        .oneshot(
-            Request::post("/api/upload")
-                .header("content-type", "multipart/form-data; boundary=X")
-                .header("content-length", body.len().to_string())
-                .body(Body::from(body))
-                .unwrap(),
-        )
+        .oneshot(Request::get("/api/events").body(Body::empty()).unwrap())
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(
-        std::fs::read_to_string(root.join("lan-drop").join("hello.txt")).unwrap(),
-        "hello lan-drop"
+    assert!(resp.status().is_success());
+
+    // The handler subscribed when the response started, so an emit now must
+    // arrive on the stream.
+    server::emit(
+        &tx,
+        "upload-progress",
+        serde_json::json!({ "file": "a.jpg", "received": 1, "total": 2 }),
     );
-
-    // upload-done was broadcast on the events channel
-    let mut saw_done = false;
-    while let Ok(ev) = rx.try_recv() {
-        if ev.name == "upload-done" && ev.data.contains("hello.txt") {
-            saw_done = true;
-        }
-    }
-    assert!(saw_done, "upload-done event missing");
-
-    // health responds
-    let resp = app
-        .oneshot(Request::get("/api/health").body(Body::empty()).unwrap())
+    let chunk = resp
+        .into_body()
+        .into_data_stream()
+        .next()
         .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
+        .expect("sse stream ended")
+        .expect("sse chunk error");
+    let text = String::from_utf8_lossy(&chunk);
+    assert!(text.contains("event: upload-progress"), "got: {text}");
+    assert!(text.contains("\"file\":\"a.jpg\""), "got: {text}");
 }
 
 #[tokio::test]
-async fn duplicate_upload_gets_suffixed_name() {
-    let root = temp_root("dup");
-    let (tx, _keep) = tokio::sync::broadcast::channel(4);
-    let app = server::router(server::new_state(tx, root.join("lan-drop"), None).unwrap());
-
-    let body = "--X\r\n\
-        Content-Disposition: form-data; name=\"file\"; filename=\"a.bin\"\r\n\r\n\
-        123\r\n\
-        --X--\r\n";
-    for _ in 0..2 {
-        let resp = app
-            .clone()
-            .oneshot(
-                Request::post("/api/upload")
-                    .header("content-type", "multipart/form-data; boundary=X")
-                    .body(Body::from(body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-    assert!(root.join("lan-drop").join("a.bin").exists());
-    assert!(root.join("lan-drop").join("a (1).bin").exists());
-}
-
-#[tokio::test]
-async fn upload_dir_switches_at_runtime() {
-    // set_upload_dir swaps the destination on the live state; the next
-    // upload must land in the new folder without rebuilding the router.
-    let root = temp_root("swap");
-    let (tx, _keep) = tokio::sync::broadcast::channel(4);
-    let state = server::new_state(tx, root.join("a"), None).unwrap();
-    let app = server::router(state.clone());
-
-    let body = "--X\r\n\
-        Content-Disposition: form-data; name=\"file\"; filename=\"f.txt\"\r\n\r\n\
-        x\r\n\
-        --X--\r\n";
-    for dir in ["a", "b"] {
-        if dir == "b" {
-            std::fs::create_dir_all(root.join("b")).unwrap();
-            state.set_upload_dir(root.join("b").canonicalize().unwrap());
-        }
-        let resp = app
-            .clone()
-            .oneshot(
-                Request::post("/api/upload")
-                    .header("content-type", "multipart/form-data; boundary=X")
-                    .body(Body::from(body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK, "dir={dir}");
-        assert!(root.join(dir).join("f.txt").exists(), "dir={dir}");
-    }
-}
-
-#[tokio::test]
-async fn upload_over_2mb_succeeds() {
-    // axum's DefaultBodyLimit (2 MiB) used to abort large multipart bodies.
-    let root = temp_root("big");
-    let (tx, _keep) = tokio::sync::broadcast::channel(4);
-    let app = server::router(server::new_state(tx, root.join("lan-drop"), None).unwrap());
-
-    let payload: Vec<u8> = (0..3 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
-    let mut body =
-        "--X\r\nContent-Disposition: form-data; name=\"file\"; filename=\"big.bin\"\r\n\r\n"
-            .to_string()
-            .into_bytes();
-    body.extend_from_slice(&payload);
-    body.extend_from_slice(b"\r\n--X--\r\n");
-
-    let resp = app
-        .oneshot(
-            Request::post("/api/upload")
-                .header("content-type", "multipart/form-data; boundary=X")
-                .body(Body::from(body))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let saved = std::fs::read(root.join("lan-drop").join("big.bin")).unwrap();
-    assert_eq!(saved.len(), 3 * 1024 * 1024);
-    assert_eq!(saved, payload);
-}
-
-#[tokio::test]
-async fn aborted_upload_leaves_no_partial_file() {
-    let root = temp_root("abort");
-    let (tx, _keep) = tokio::sync::broadcast::channel(4);
-    let app = server::router(server::new_state(tx, root.join("lan-drop"), None).unwrap());
-
-    // multipart body cut off before the closing boundary
-    let body = "--X\r\n\
-        Content-Disposition: form-data; name=\"file\"; filename=\"cut.bin\"\r\n\r\n\
-        partial-bytes";
-    let resp = app
-        .oneshot(
-            Request::post("/api/upload")
-                .header("content-type", "multipart/form-data; boundary=X")
-                .body(Body::from(body))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-
-    let upload_dir = root.join("lan-drop");
-    let leftovers: Vec<_> = std::fs::read_dir(&upload_dir)
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    assert!(
-        leftovers.is_empty(),
-        "aborted upload left files: {leftovers:?}"
-    );
-}
-
-#[tokio::test]
-async fn ca_cert_route_serves_pem_or_404() {
-    let root = temp_root("ca");
-    let (tx, _keep) = tokio::sync::broadcast::channel(4);
-    let pem = "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n";
-    let app = server::router(
-        server::new_state(tx, root.join("lan-drop"), Some(pem.to_string())).unwrap(),
-    );
-    let resp = app
-        .clone()
-        .oneshot(Request::get("/ca.crt").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(resp.headers()["content-type"], "application/x-x509-ca-cert");
-    assert!(resp.headers()["content-disposition"]
-        .to_str()
-        .unwrap()
-        .contains("lan-drop-ca.crt"));
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    assert_eq!(&bytes[..], pem.as_bytes());
-
-    let (tx2, _keep2) = tokio::sync::broadcast::channel(4);
-    let app2 = server::router(server::new_state(tx2, root.join("lan-drop"), None).unwrap());
-    let resp = app2
-        .oneshot(Request::get("/ca.crt").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+async fn unique_path_suffixes_duplicates() {
+    let root = temp_root("uniq");
+    std::fs::write(root.join("photo.jpg"), b"x").unwrap();
+    let p = server::unique_path(&root, "photo.jpg").await;
+    assert_eq!(p.file_name().unwrap(), "photo (1).jpg");
+    std::fs::write(&p, b"x").unwrap();
+    let p2 = server::unique_path(&root, "photo.jpg").await;
+    assert_eq!(p2.file_name().unwrap(), "photo (2).jpg");
 }
