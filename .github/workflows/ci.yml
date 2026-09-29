@@ -15,6 +15,11 @@ concurrency:
 
 jobs:
   ci:
+    # Release-please PRs are version/CHANGELOG bumps only; GITHUB_TOKEN
+    # already keeps them from triggering CI, but a manual branch update
+    # (synchronize) would. github.head_ref is empty on push/dispatch, so
+    # those still run.
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
