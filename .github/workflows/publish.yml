@@ -46,12 +46,20 @@ jobs:
 
       # tauri build runs beforeBuildCommand (npm run build) itself, then
       # bundles the NSIS installer (bundle.targets = "nsis").
+      # TAURI_SIGNING_PRIVATE_KEY signs the updater artifact (empty-password
+      # key stored as a repo secret; only this one secret is needed).
       - name: Build installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: npm run tauri build
 
       # Upload under two names: the versioned archive name, plus a stable
       # copy `lan-drop-setup.exe` so README's Installation section can link
       # releases/latest/download/lan-drop-setup.exe without per-release edits.
+      # Also uploads the updater artifact's .sig and the latest.json manifest;
+      # the app checks releases/latest/download/latest.json on startup (public
+      # repo — no auth) and force-updates when the manifest version is newer. Tauri 2
+      # signs the plain NSIS setup.exe on Windows (no separate zip).
       - name: Upload installer to the release
         shell: bash
         env:
@@ -60,4 +68,13 @@ jobs:
         run: |
           cd src-tauri/target/release/bundle/nsis
           cp *-setup.exe lan-drop-setup.exe
-          gh release upload "$TAG" --clobber *-setup.exe
+          # Why: manifest version must equal the app version (no leading "v"),
+          # else the updater plugin sees a mismatch and re-downloads every time.
+          VERSION="${TAG#v}"
+          EXE="lan-drop_${VERSION}_x64-setup.exe"
+          SIGNATURE="$(cat "$EXE.sig")"
+          jq -n --arg ver "$VERSION" --arg sig "$SIGNATURE" \
+            --arg url "https://github.com/j4rviscmd/lan-drop/releases/download/$TAG/$EXE" \
+            '{version:$ver, notes:("Release " + $ver), pub_date:(now | todate),
+              platforms:{"windows-x86_64":{signature:$sig, url:$url}}}' > latest.json
+          gh release upload "$TAG" --clobber *-setup.exe *.sig latest.json

@@ -22,6 +22,10 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tower-http = { version = "0.6", features = ["cors"] }
 idevice = { version = "0.1.68", features = ["usbmuxd", "afc", "pair", "house_arrest", "installation_proxy"] }
 tauri-plugin-dialog = "2.8.0"
+# Startup auto-update: updater fetches the release manifest (public GitHub
+# Release, no auth needed), process relaunches after the install.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 uuid = { version = "1.26.1", features = ["v4"] }
 parking_lot = "0.12"
 # Debug-only tooling, but the gate lives in lib.rs (#[cfg(debug_assertions)]
