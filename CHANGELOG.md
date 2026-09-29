@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/j4rviscmd/lan-drop/compare/v1.1.0...v1.2.0) (2026-09-29)
+
+
+### Features
+
+* show total selected file size in SelectionCard header ([#46](https://github.com/j4rviscmd/lan-drop/issues/46)) ([36a8b30](https://github.com/j4rviscmd/lan-drop/commit/36a8b30a0cac75b182ba67ff05792a0d226bce82))
+
 ## [1.1.0](https://github.com/j4rviscmd/lan-drop/compare/v1.0.0...v1.1.0) (2026-09-29)
 
 
