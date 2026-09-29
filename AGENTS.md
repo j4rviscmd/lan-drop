@@ -27,3 +27,7 @@ Automated by release-please (`release-please-config.json` + `.release-please-man
 - PRs are squash-merged with the PR title as the commit message, so the title must carry the type. Changes with no end-user impact (dev-only code, CI, tooling, docs) use a non-triggering type (`chore:`, `style:`, `test:`, `docs:`, `refactor:`, `ci:`) so they don't ship a release.
 - The release PR is authored with `GITHUB_TOKEN`, so PR-triggered CI never runs on it. Once CI is enabled with required checks (at public launch), merge it with an admin override (owner permits `--admin`).
 - `publish.yml` recovery: run it manually from the Actions tab with the `tag` input (or "Re-run failed jobs" — it is a single idempotent job); uploads use `--clobber` so re-runs replace assets safely.
+
+## Dependency updates (Renovate)
+
+Renovate (`renovate.json` + the Mend-hosted Renovate GitHub App) opens dependency-update PRs for the npm frontend, the Cargo backend, and GitHub Actions workflows. Patch updates, dev-only minor updates, and lockfile maintenance automerge (squash) once CI passes; runtime minor/major updates are manual-review PRs. PR titles are `chore(deps): ...`, which never triggers release-please. Renovate never bumps the app's own version (`src-tauri/tauri.conf.json`) and ignores the vendored path dependency (`src-tauri/vendor/tauri-plugin-mcp-bridge`).
