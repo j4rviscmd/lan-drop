@@ -1,5 +1,10 @@
 # lan-drop
 
+[![CI](https://github.com/j4rviscmd/lan-drop/actions/workflows/ci.yml/badge.svg)](https://github.com/j4rviscmd/lan-drop/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/j4rviscmd/lan-drop)](https://github.com/j4rviscmd/lan-drop/releases/latest)
+[![Built with Tauri](https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri&logoColor=black)](https://tauri.app/)
+[![License: MIT](https://img.shields.io/github/license/j4rviscmd/lan-drop)](./LICENSE)
+
 Windows ⇄ iPhone file transfer app built with Tauri 2.0. See [DESIGN.md](./DESIGN.md) for the architecture.
 
 ## Installation
