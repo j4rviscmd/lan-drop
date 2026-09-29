@@ -29,6 +29,8 @@ CI (`.github/workflows/ci.yml`) runs lint, frontend build, `cargo clippy -D warn
 
 [release-please](https://github.com/googleapis/release-please) automates versioning: merging `feat:`/`fix:` PRs into `main` opens a `chore(main): release X.Y.Z` PR that bumps `src-tauri/tauri.conf.json` (the app's version source of truth — `package.json` and `src-tauri/Cargo.toml` stay unmanaged to keep `Cargo.lock` consistent with `--locked` CI) and updates `CHANGELOG.md`. Merging that release PR creates the `vX.Y.Z` tag and GitHub Release, then dispatches `.github/workflows/publish.yml`, which builds the Windows NSIS installer and attaches it under both the versioned name (`lan-drop_X.Y.Z_x64-setup.exe`) and a stable `lan-drop-setup.exe` copy (for permalink links like `releases/latest/download/lan-drop-setup.exe`). `publish.yml` can also be run manually from the Actions tab to re-publish any tag.
 
+The installer is also signed for the built-in auto-updater: `publish.yml` uploads the `*.sig` signature and a `latest.json` manifest, and the app checks `releases/latest/download/latest.json` on every startup, force-updating (download → install → relaunch) whenever a newer version is published.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).

@@ -11,6 +11,7 @@ Windows ⇄ iPhone file transfer app built with Tauri 2.0. The PC pairs with an 
 - Transfers: `usb_pull` (recursive directory walk, per-file progress, `unique_path` so sanitized-name collisions dedupe instead of overwriting), `usb_push` (drag-and-drop paths land in the browsed folder, recursively for folders; the grid re-lists on success), `usb_delete` (AFC `remove`/`remove_all` behind a native confirm). Progress events flow over SSE from a **loopback-only** axum listener (`:8788+` fallback).
 - Thumbnails: `usb_thumbnail` reads a 128 KiB head and parses EXIF IFD1 (JPEG only) → base64; rendered lazily via IntersectionObserver.
 - Settings (`settings.rs`): upload destination persisted to `config.json` in the app data dir (default `Downloads\lan-drop`). Missing/corrupt file → defaults, never blocks startup; a configured-but-unusable path falls back to the default while keeping the saved choice. `AppState.upload_dir` is a `parking_lot::RwLock`; `set_upload_dir` creates + canonicalizes + persists + swaps, leaving state unchanged on failure.
+- Auto-update (`AppUpdateInitializer` + `useAppUpdate`): release builds check `releases/latest/download/latest.json` on startup (dev builds are gated off by `import.meta.env.PROD`) and force-apply newer versions via tauri-plugin-updater — download → install → relaunch — behind a blocking overlay with no skip. Any check/download failure fails open to normal startup, so a broken release feed cannot brick an installed app.
 
 ## UI
 
@@ -27,6 +28,7 @@ Windows ⇄ iPhone file transfer app built with Tauri 2.0. The PC pairs with an 
 | Frontend | React 19 + TypeScript + Vite 6 + Tailwind v4 + ObsidianUI |
 | Device protocol | `idevice` crate: usbmuxd (TCP :27015) → lockdown → AFC / house_arrest |
 | Progress push | SSE over a loopback-only axum listener |
+| Auto-update | tauri-plugin-updater + tauri-plugin-process, minisign-signed NSIS artifacts |
 | Settings | `config.json` in the app data dir |
 
 ## Known limitations

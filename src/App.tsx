@@ -1,3 +1,4 @@
+import { AppUpdateInitializer } from "@components/AppUpdateInitializer";
 import { Shell } from "@components/Shell";
 import { useServerInfo } from "@hooks/useServerInfo";
 import { TransfersProvider } from "@hooks/useTransfers";
@@ -8,6 +9,9 @@ export default function App() {
 
   return (
     <>
+      {/* Why: PROD gate — dev builds have no released artifacts to compare
+          against or install, so skip the startup update check entirely. */}
+      {import.meta.env.PROD && <AppUpdateInitializer />}
       {info ? (
         <TransfersProvider loopbackPort={info.loopback_port}>
           {/* Why: refresh server_info so both the Storage card and USB Pull

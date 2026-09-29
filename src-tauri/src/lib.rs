@@ -138,6 +138,11 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
+        // Startup auto-update (frontend: AppUpdateInitializer). Registered
+        // unconditionally — public release manifest, no build-time secrets,
+        // and it keeps the updater:* capability resolvable in dev too.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             server_info,
             set_upload_dir,
