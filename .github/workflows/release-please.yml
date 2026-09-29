@@ -1,0 +1,42 @@
+# Release automation, part 1: versioning.
+#
+# push to main: release-please opens/updates a `chore(main): release X.Y.Z`
+# pull request from Conventional Commits (feat=minor, fix=patch, `!`=major).
+# Merging that PR makes release-please create the vX.Y.Z tag + GitHub Release
+# and dispatch publish.yml to build and attach the Windows installers.
+#
+# Why publish.yml is chained via workflow_dispatch instead of `on: release`:
+# releases created with GITHUB_TOKEN do not fire workflow events, but
+# workflow_dispatch (and repository_dispatch) are the documented exceptions
+# that GITHUB_TOKEN can trigger — no PAT needed.
+# https://github.com/googleapis/release-please
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    permissions:
+      contents: write # create tags + releases
+      pull-requests: write # open/update release PRs
+      actions: write # dispatch publish.yml
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Dispatch publish
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: gh workflow run publish.yml --ref "$TAG" -f tag="$TAG"

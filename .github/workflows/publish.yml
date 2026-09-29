@@ -1,0 +1,63 @@
+# Release automation, part 2: build + attach the Windows installer.
+#
+# Dispatched by release-please.yml when merging a release PR creates the
+# vX.Y.Z tag + GitHub Release. Also runnable manually from the Actions tab
+# to (re-)publish any tag; `gh release upload --clobber` replaces existing
+# assets, so re-runs stay idempotent.
+name: publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write # upload release assets
+
+concurrency:
+  group: publish-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # tauri build runs beforeBuildCommand (npm run build) itself, then
+      # bundles the NSIS installer (bundle.targets = "nsis").
+      - name: Build installer
+        run: npm run tauri build
+
+      # Upload under two names: the versioned archive name, plus a stable
+      # copy `lan-drop-setup.exe` so README's Installation section can link
+      # releases/latest/download/lan-drop-setup.exe without per-release edits.
+      - name: Upload installer to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          cd src-tauri/target/release/bundle/nsis
+          cp *-setup.exe lan-drop-setup.exe
+          gh release upload "$TAG" --clobber *-setup.exe
