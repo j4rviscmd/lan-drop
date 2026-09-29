@@ -28,12 +28,15 @@ interface SelectionCardProps {
  *  bulk Pull/Delete targets visible instead of a bare "1/n" counter.
  *  Rendered only while something is ticked. */
 export function SelectionCard({ selection, onRemove, onClear, onDelete }: SelectionCardProps) {
+  // Files only — folder "size" from the listing is not a real byte total.
+  const totalSize = [...selection.values()].reduce((n, it) => (it.is_dir ? n : n + it.size), 0);
   return (
     // Why: at >=860px, Selected and Transfers split the left rail below Storage 1:1; the list scrolls internally.
     <Card className="min-[860px]:min-h-0 min-[860px]:flex-1">
       <CardHeader>
         <CardTitle className="text-[13px] tracking-[0.06em] text-muted-foreground uppercase">
           Selected <span className="tabular-nums">· {selection.size}</span>
+          {totalSize > 0 ? <span className="tabular-nums">· {fmtSize(totalSize)}</span> : null}
         </CardTitle>
         <CardAction>
           <DropdownMenu>
