@@ -1,12 +1,10 @@
 name: CI
 
-# Disabled until the repository goes public (private-repo Actions minutes are
-# limited). To enable, uncomment the push/pull_request triggers below.
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [main]
-  # pull_request:
+  push:
+    branches: [main]
+  pull_request:
 
 permissions:
   contents: read
