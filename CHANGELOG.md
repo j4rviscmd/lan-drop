@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/j4rviscmd/lan-drop/compare/v1.0.0...v1.1.0) (2026-09-29)
+
+
+### Features
+
+* add startup auto-updater with forced update flow ([#36](https://github.com/j4rviscmd/lan-drop/issues/36)) ([a6192ec](https://github.com/j4rviscmd/lan-drop/commit/a6192ecf8b002bbc2cefcf8444edf44894a2984b))
+
 ## [1.0.0](https://github.com/j4rviscmd/lan-drop/compare/v0.1.0...v1.0.0) (2026-09-29)
 
 
