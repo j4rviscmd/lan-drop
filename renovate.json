@@ -10,14 +10,8 @@
   },
   "packageRules": [
     {
-      "description": "Automerge patch updates once CI passes",
-      "matchUpdateTypes": ["patch"],
-      "automerge": true
-    },
-    {
-      "description": "Automerge dev-only minor updates once CI passes",
-      "matchDepTypes": ["devDependencies"],
-      "matchUpdateTypes": ["minor"],
+      "description": "Automerge patch and minor updates once CI passes",
+      "matchUpdateTypes": ["patch", "minor"],
       "automerge": true
     }
   ]
