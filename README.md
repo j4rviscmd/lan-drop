@@ -2,6 +2,10 @@
 
 Windows ⇄ iPhone file transfer app built with Tauri 2.0. See [DESIGN.md](./DESIGN.md) for the architecture.
 
+## Installation
+
+Download the latest installer: [lan-drop-setup.exe](https://github.com/j4rviscmd/lan-drop/releases/latest/download/lan-drop-setup.exe)
+
 ## Development
 
 ### Frontend stack
