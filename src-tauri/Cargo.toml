@@ -27,7 +27,7 @@ tauri-plugin-dialog = "2.8.0"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 uuid = { version = "1.26.1", features = ["v4"] }
-parking_lot = "0.12"
+parking_lot = "0.13"
 # Debug-only tooling, but the gate lives in lib.rs (#[cfg(debug_assertions)]
 # around the plugin registration): cargo does not support debug_assertions
 # for dependency selection (it warns and currently compiles this into release
