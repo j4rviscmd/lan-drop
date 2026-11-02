@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/j4rviscmd/lan-drop/compare/v1.2.0...v1.2.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate parking_lot to 0.13 ([#57](https://github.com/j4rviscmd/lan-drop/issues/57)) ([ebc71d6](https://github.com/j4rviscmd/lan-drop/commit/ebc71d6847d622beb3e0cb7538b98b8346f69bec))
+* **deps:** update rust crate tower-http to 0.7 ([#61](https://github.com/j4rviscmd/lan-drop/issues/61)) ([1bdab6e](https://github.com/j4rviscmd/lan-drop/commit/1bdab6e4d21723646ef71e8865173b596cf4e4a8))
+
 ## [1.2.0](https://github.com/j4rviscmd/lan-drop/compare/v1.1.0...v1.2.0) (2026-09-29)
 
 
